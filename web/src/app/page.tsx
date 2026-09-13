@@ -1,233 +1,189 @@
 "use client";
 
-import { apiFetch } from "@/lib/api";
-import { Application, ApplicationList } from "@/lib/types";
-import { FormEvent, useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import {
+  Room,
+  RoomEvent,
+  Track,
+  type Participant,
+  type RemoteTrack,
+  type TranscriptionSegment,
+} from "livekit-client";
+
+type VoiceState = "idle" | "listening" | "processing" | "speaking" | "error";
+type TranscriptTurn = {
+  id: string;
+  speaker: "user" | "agent";
+  text: string;
+  final: boolean;
+};
+
+const API_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
+
+async function createSession(): Promise<{ livekit_url: string; token: string }> {
+  const response = await fetch(`${API_URL}/session`, { method: "POST" });
+  if (!response.ok) throw new Error(await response.text());
+  return response.json();
+}
+
+function agentState(value?: string): VoiceState | null {
+  if (value === "speaking") return "speaking";
+  if (value === "listening" || value === "idle") return "listening";
+  if (value === "thinking" || value === "initializing") return "processing";
+  return null;
+}
+
+const stateLabel: Record<VoiceState, string> = {
+  idle: "Ready",
+  listening: "Listening…",
+  processing: "Thinking…",
+  speaking: "Speaking…",
+  error: "Something went wrong",
+};
 
 export default function Home() {
-  const [applications, setApplications] = useState<Application[]>([]);
-  const [applicationSearch, setApplicationSearch] = useState("");
-  const [submittedApplicationSearch, setSubmittedApplicationSearch] = useState("");
-  const [applicationPage, setApplicationPage] = useState(1);
-  const [applicationPageSize, setApplicationPageSize] = useState(20);
-  const [applicationTotal, setApplicationTotal] = useState(0);
+  const [voiceState, setVoiceState] = useState<VoiceState>("idle");
+  const [transcript, setTranscript] = useState<TranscriptTurn[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const roomRef = useRef<Room | null>(null);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
 
   useEffect(() => {
-    let cancelled = false;
-    const loadApplications = async () => {
-      try {
-        const offset = (applicationPage - 1) * applicationPageSize;
-        const params = new URLSearchParams({
-          limit: applicationPageSize.toString(),
-          offset: offset.toString(),
-        });
-        if (submittedApplicationSearch) {
-          params.set("search", submittedApplicationSearch);
-        }
-        const response = await apiFetch<ApplicationList>(
-          `/applications?${params.toString()}`
-        );
-        if (!cancelled) {
-          setApplications(response.items);
-          setApplicationTotal(response.total);
-        }
-      } catch (err) {
-        if (!cancelled) {
-          setError(
-            err instanceof Error ? err.message : "Failed to load applications"
-          );
-        }
-      }
-    };
-    loadApplications();
     return () => {
-      cancelled = true;
+      void roomRef.current?.disconnect();
     };
-  }, [applicationPage, applicationPageSize, submittedApplicationSearch]);
+  }, []);
 
-  const totalPages = Math.max(1, Math.ceil(applicationTotal / applicationPageSize));
-
-  const handleApplicationSearch = (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    setApplicationPage(1);
-    setSubmittedApplicationSearch(applicationSearch.trim());
+  const endConversation = async () => {
+    const room = roomRef.current;
+    roomRef.current = null;
+    if (room) await room.disconnect();
+    setVoiceState("idle");
   };
 
+  const startConversation = async () => {
+    setError(null);
+    setTranscript([]);
+    setVoiceState("processing");
+
+    const room = new Room();
+    roomRef.current = room;
+
+    room.on(RoomEvent.TrackSubscribed, (track: RemoteTrack) => {
+      if (track.kind === Track.Kind.Audio && audioRef.current) {
+        track.attach(audioRef.current);
+      }
+    });
+
+    room.on(
+      RoomEvent.TranscriptionReceived,
+      (segments: TranscriptionSegment[], participant?: Participant) => {
+        const speaker: "user" | "agent" =
+          participant?.identity === room.localParticipant.identity ? "user" : "agent";
+        setTranscript((current) => {
+          const next = [...current];
+          for (const segment of segments) {
+            if (!segment.text.trim()) continue;
+            const id = `${speaker}-${segment.id}`;
+            const turn = { id, speaker, text: segment.text, final: segment.final };
+            const index = next.findIndex((item) => item.id === id);
+            if (index === -1) next.push(turn);
+            else next[index] = turn;
+          }
+          return next;
+        });
+      },
+    );
+
+    room.on(RoomEvent.ParticipantAttributesChanged, (attributes) => {
+      const nextState = agentState(attributes["lk.agent.state"]);
+      if (nextState) setVoiceState(nextState);
+    });
+
+    room.on(RoomEvent.Disconnected, () => {
+      if (roomRef.current === room) roomRef.current = null;
+      setVoiceState("idle");
+    });
+
+    try {
+      const session = await createSession();
+      await room.connect(session.livekit_url, session.token);
+      await room.startAudio();
+      await room.localParticipant.setMicrophoneEnabled(true);
+      setVoiceState("listening");
+    } catch (cause) {
+      await room.disconnect();
+      roomRef.current = null;
+      setError(cause instanceof Error ? cause.message : "Unable to start conversation");
+      setVoiceState("error");
+    }
+  };
+
+  const active = voiceState !== "idle" && voiceState !== "error";
+
   return (
-    <div className="min-h-screen bg-zinc-50 font-sans text-zinc-900">
-      <main className="mx-auto flex w-full max-w-5xl flex-col gap-8 px-6 py-16">
-        <header className="rounded-3xl border border-zinc-200 bg-gradient-to-br from-white via-white to-zinc-100 p-8 shadow-sm">
-          <p className="text-xs font-semibold uppercase tracking-[0.2em] text-zinc-500">
-            Loan Onboarding
-          </p>
-          <h1 className="mt-2 text-3xl font-semibold text-zinc-900">
-            Risk Team Control Tower
-          </h1>
-          <p className="mt-2 text-base text-zinc-600">
-            Centralize clarifications, monitor case progress, and keep customers moving.
-          </p>
-          <div className="mt-6 flex flex-wrap gap-3">
-            <a
-              className="inline-flex items-center justify-center rounded-full bg-zinc-900 px-5 py-2 text-sm font-semibold text-white"
-              href="/riskdashboard"
-            >
-              Open Risk Dashboard
-            </a>
-            <a
-              className="inline-flex items-center justify-center rounded-full border border-zinc-200 px-5 py-2 text-sm font-semibold text-zinc-700"
-              href="/customerquerytracker"
-            >
-              View Query Tracker
-            </a>
-          </div>
-          <div className="mt-6 grid gap-3 sm:grid-cols-3">
-            <div className="rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm">
-              <p className="text-xs font-semibold uppercase text-zinc-500">Faster reviews</p>
-              <p className="mt-2 text-sm text-zinc-700">
-                Gather structured responses without back-and-forth.
-              </p>
-            </div>
-            <div className="rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm">
-              <p className="text-xs font-semibold uppercase text-zinc-500">Live tracking</p>
-              <p className="mt-2 text-sm text-zinc-700">
-                Monitor status from invite to delivery in one view.
-              </p>
-            </div>
-            <div className="rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm">
-              <p className="text-xs font-semibold uppercase text-zinc-500">Audit ready</p>
-              <p className="mt-2 text-sm text-zinc-700">
-                Keep a clear record of questions and answers.
-              </p>
-            </div>
-          </div>
-        </header>
+    <main className="mx-auto flex min-h-screen w-full max-w-2xl flex-col px-6 py-16 text-zinc-900">
+      <header className="text-center">
+        <h1 className="text-2xl font-semibold">Underwriting Voice Agent</h1>
+        <p className="mt-2 text-sm text-zinc-500">
+          Start a conversation and speak naturally.
+        </p>
+      </header>
 
-        <section className="rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <h2 className="text-lg font-semibold">Applications</h2>
-              <p className="text-sm text-zinc-600">
-                Browse applications and copy IDs for new RFIs.
-              </p>
-            </div>
-            <form className="flex flex-wrap items-center gap-2" onSubmit={handleApplicationSearch}>
-              <input
-                className="rounded-lg border border-zinc-200 px-3 py-2 text-sm"
-                placeholder="Search by application ID"
-                value={applicationSearch}
-                onChange={(event) => setApplicationSearch(event.target.value)}
-              />
-              <button
-                className="rounded-full border border-zinc-200 px-4 py-2 text-xs font-semibold text-zinc-600 hover:border-zinc-300"
-                type="submit"
-              >
-                Search
-              </button>
-            </form>
-          </div>
-          <div className="mt-4 flex flex-wrap items-center justify-between gap-3 text-sm text-zinc-600">
-            <div>
-              Showing{" "}
-              {applications.length === 0
-                ? 0
-                : (applicationPage - 1) * applicationPageSize + 1}{" "}
-              -{" "}
-              {Math.min(applicationPage * applicationPageSize, applicationTotal)}{" "}
-              of {applicationTotal}
-            </div>
-            <div className="flex items-center gap-2">
-              <label className="text-xs font-semibold uppercase tracking-wide text-zinc-500">
-                Per page
-              </label>
-              <select
-                className="rounded-lg border border-zinc-200 bg-white px-2 py-1 text-sm"
-                value={applicationPageSize}
-                onChange={(event) => {
-                  setApplicationPageSize(Number(event.target.value));
-                  setApplicationPage(1);
-                }}
-              >
-                <option value={20}>20</option>
-                <option value={50}>50</option>
-                <option value={100}>100</option>
-              </select>
-            </div>
-          </div>
-          <div className="mt-4 overflow-hidden rounded-lg border border-zinc-200">
-            <table className="w-full text-left text-sm">
-              <thead className="bg-zinc-100 text-xs uppercase text-zinc-500">
-                <tr>
-                  <th className="px-4 py-2">Application ID</th>
-                  <th className="px-4 py-2">Customer ID</th>
-                  <th className="px-4 py-2">Loan Amount</th>
-                  <th className="px-4 py-2">Tenure</th>
-                  <th className="px-4 py-2">Issue Status</th>
-                  <th className="px-4 py-2">Created</th>
-                </tr>
-              </thead>
-              <tbody>
-                {applications.length === 0 ? (
-                  <tr>
-                    <td className="px-4 py-3 text-sm text-zinc-500" colSpan={6}>
-                      No applications found.
-                    </td>
-                  </tr>
-                ) : (
-                  applications.map((application) => (
-                    <tr
-                      key={application.application_id}
-                      className="border-t border-zinc-200"
-                    >
-                      <td className="px-4 py-3">{application.application_id}</td>
-                      <td className="px-4 py-3">{application.customer_id}</td>
-                      <td className="px-4 py-3">
-                        {application.requested_loan_amount.toLocaleString()}
-                      </td>
-                      <td className="px-4 py-3">
-                        {application.requested_tenure_amount}
-                      </td>
-                      <td className="px-4 py-3">
-                        {application.issue_status ?? "None"}
-                      </td>
-                      <td className="px-4 py-3">
-                        {new Date(application.created_at).toLocaleString()}
-                      </td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
-          <div className="mt-4 flex items-center justify-between gap-3">
-            <button
-              className="rounded-full border border-zinc-200 px-4 py-2 text-xs font-semibold text-zinc-600 hover:border-zinc-300 disabled:opacity-60"
-              type="button"
-              onClick={() => setApplicationPage((prev) => Math.max(1, prev - 1))}
-              disabled={applicationPage <= 1}
-            >
-              Previous
-            </button>
-            <span className="text-xs text-zinc-500">
-              Page {applicationPage} of {totalPages}
+      <section className="flex flex-col items-center py-16">
+        <button
+          type="button"
+          aria-label={active ? "End conversation" : "Start conversation"}
+          onClick={active ? endConversation : startConversation}
+          className={`flex h-44 w-44 items-center justify-center rounded-full text-white shadow-lg transition hover:scale-[1.02] active:scale-95 ${
+            voiceState === "error"
+              ? "bg-red-600"
+              : active
+                ? "bg-zinc-900"
+                : "bg-blue-600"
+          } ${voiceState === "listening" ? "animate-pulse" : ""}`}
+        >
+          {voiceState === "speaking" ? (
+            <span className="flex h-12 items-center gap-2" aria-hidden="true">
+              <span className="voice-bar" />
+              <span className="voice-bar [animation-delay:120ms]" />
+              <span className="voice-bar [animation-delay:240ms]" />
+              <span className="voice-bar [animation-delay:360ms]" />
             </span>
-            <button
-              className="rounded-full border border-zinc-200 px-4 py-2 text-xs font-semibold text-zinc-600 hover:border-zinc-300 disabled:opacity-60"
-              type="button"
-              onClick={() =>
-                setApplicationPage((prev) => Math.min(totalPages, prev + 1))
-              }
-              disabled={applicationPage >= totalPages}
-            >
-              Next
-            </button>
-          </div>
-          {error && (
-            <p className="mt-3 text-sm text-red-600">Error: {error}</p>
+          ) : active ? (
+            <span className="h-8 w-8 rounded-sm bg-white" aria-hidden="true" />
+          ) : (
+            <span className="px-7 text-center text-base font-semibold">
+              {voiceState === "error" ? "Try again" : "Start conversation"}
+            </span>
           )}
-        </section>
+        </button>
+        <p className="mt-6 text-sm font-medium text-zinc-600">{stateLabel[voiceState]}</p>
+        {error && <p className="mt-2 max-w-md text-center text-sm text-red-600">{error}</p>}
+        <audio ref={audioRef} autoPlay />
+      </section>
 
-      </main>
-    </div>
+      <section aria-live="polite" className="border-t border-zinc-200 pt-8">
+        <h2 className="text-sm font-semibold uppercase tracking-wider text-zinc-500">
+          Conversation
+        </h2>
+        {transcript.length === 0 ? (
+          <p className="py-10 text-sm text-zinc-400">
+            Your conversation will appear here.
+          </p>
+        ) : (
+          <div className="mt-6 space-y-6">
+            {transcript.map((turn) => (
+              <div key={turn.id} className={turn.final ? "" : "opacity-60"}>
+                <p className="text-xs font-semibold uppercase tracking-wide text-zinc-500">
+                  {turn.speaker === "user" ? "You" : "Agent"}
+                </p>
+                <p className="mt-1 whitespace-pre-wrap leading-7">{turn.text}</p>
+              </div>
+            ))}
+          </div>
+        )}
+      </section>
+    </main>
   );
 }

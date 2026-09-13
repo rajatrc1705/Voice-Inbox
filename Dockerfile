@@ -5,11 +5,10 @@ ENV PYTHONUNBUFFERED=1 \
 
 WORKDIR /app
 
-COPY api/requirements.txt /tmp/requirements.txt
-RUN python -m venv /app/.venv && \
-    /app/.venv/bin/pip install -r /tmp/requirements.txt
-
+COPY pyproject.toml /app/pyproject.toml
+COPY agent.py /app/agent.py
 COPY api /app/api
-RUN chmod +x /app/api/scripts/start.sh
+RUN python -m venv /app/.venv && \
+    /app/.venv/bin/pip install .
 
-CMD ["/app/api/scripts/start.sh"]
+CMD ["/bin/sh", "-c", "exec /app/.venv/bin/uvicorn api.main:app --host 0.0.0.0 --port ${PORT:-8080}"]

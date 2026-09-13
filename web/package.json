@@ -9,7 +9,6 @@
     "lint": "eslint"
   },
   "dependencies": {
-    "@vercel/analytics": "^1.6.1",
     "livekit-client": "^2.17.0",
     "next": "16.1.4",
     "react": "19.2.3",
