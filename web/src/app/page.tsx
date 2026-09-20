@@ -23,6 +23,23 @@ type TaskItem = {
   source_transcript: string;
   status: string;
 };
+type IdeaItem = {
+  id: string;
+  text: string;
+  source_transcript: string;
+};
+type ReminderItem = {
+  id: string;
+  title: string;
+  trigger_at: string;
+  source_transcript: string;
+  status: string;
+};
+type StoredItems = {
+  tasks: TaskItem[];
+  ideas: IdeaItem[];
+  reminders: ReminderItem[];
+};
 
 const API_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
 
@@ -36,6 +53,34 @@ async function getTasks(): Promise<TaskItem[]> {
   const response = await fetch(`${API_URL}/tasks`);
   if (!response.ok) throw new Error(await response.text());
   return response.json();
+}
+
+async function getIdeas(): Promise<IdeaItem[]> {
+  const response = await fetch(`${API_URL}/ideas`);
+  if (!response.ok) throw new Error(await response.text());
+  return response.json();
+}
+
+async function getReminders(): Promise<ReminderItem[]> {
+  const response = await fetch(`${API_URL}/reminders`);
+  if (!response.ok) throw new Error(await response.text());
+  return response.json();
+}
+
+async function getStoredItems(): Promise<StoredItems> {
+  const [tasks, ideas, reminders] = await Promise.all([
+    getTasks(),
+    getIdeas(),
+    getReminders(),
+  ]);
+  return { tasks, ideas, reminders };
+}
+
+function formatDate(value: string): string {
+  return new Intl.DateTimeFormat(undefined, {
+    dateStyle: "medium",
+    timeStyle: "short",
+  }).format(new Date(value));
 }
 
 function agentState(value?: string): VoiceState | null {
@@ -56,16 +101,20 @@ const stateLabel: Record<VoiceState, string> = {
 export default function Home() {
   const [voiceState, setVoiceState] = useState<VoiceState>("idle");
   const [transcript, setTranscript] = useState<TranscriptTurn[]>([]);
-  const [tasks, setTasks] = useState<TaskItem[]>([]);
+  const [items, setItems] = useState<StoredItems>({
+    tasks: [],
+    ideas: [],
+    reminders: [],
+  });
   const [error, setError] = useState<string | null>(null);
   const roomRef = useRef<Room | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
   useEffect(() => {
     let mounted = true;
-    void getTasks()
-      .then((storedTasks) => {
-        if (mounted) setTasks(storedTasks);
+    void getStoredItems()
+      .then((storedItems) => {
+        if (mounted) setItems(storedItems);
       })
       .catch(() => undefined);
 
@@ -121,7 +170,7 @@ export default function Home() {
       if (nextState) {
         setVoiceState(nextState);
         if (nextState === "listening") {
-          void getTasks().then(setTasks).catch(() => undefined);
+          void getStoredItems().then(setItems).catch(() => undefined);
         }
       }
     });
@@ -189,22 +238,65 @@ export default function Home() {
         <audio ref={audioRef} autoPlay />
       </section>
 
-      <section className="border-t border-zinc-200 py-8">
-        <h2 className="text-sm font-semibold uppercase tracking-wider text-zinc-500">
-          Tasks
-        </h2>
-        {tasks.length === 0 ? (
-          <p className="py-8 text-sm text-zinc-400">No tasks captured yet.</p>
-        ) : (
-          <ul className="mt-6 space-y-5">
-            {tasks.map((task) => (
-              <li key={task.id}>
-                <p className="font-medium">{task.title}</p>
-                <p className="mt-1 text-sm text-zinc-500">{task.source_transcript}</p>
-              </li>
-            ))}
-          </ul>
-        )}
+      <section className="grid gap-8 border-t border-zinc-200 py-8 sm:grid-cols-3">
+        <div>
+          <h2 className="text-sm font-semibold uppercase tracking-wider text-zinc-500">
+            Tasks
+          </h2>
+          {items.tasks.length === 0 ? (
+            <p className="mt-4 text-sm text-zinc-400">No tasks yet.</p>
+          ) : (
+            <ul className="mt-4 space-y-4">
+              {items.tasks.map((task) => (
+                <li key={task.id}>
+                  <p className="text-sm font-medium">{task.title}</p>
+                  <p className="mt-1 text-xs text-zinc-500">{task.source_transcript}</p>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+
+        <div>
+          <h2 className="text-sm font-semibold uppercase tracking-wider text-zinc-500">
+            Ideas
+          </h2>
+          {items.ideas.length === 0 ? (
+            <p className="mt-4 text-sm text-zinc-400">No ideas yet.</p>
+          ) : (
+            <ul className="mt-4 space-y-4">
+              {items.ideas.map((idea) => (
+                <li key={idea.id}>
+                  <p className="text-sm font-medium">{idea.text}</p>
+                  <p className="mt-1 text-xs text-zinc-500">{idea.source_transcript}</p>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+
+        <div>
+          <h2 className="text-sm font-semibold uppercase tracking-wider text-zinc-500">
+            Reminders
+          </h2>
+          {items.reminders.length === 0 ? (
+            <p className="mt-4 text-sm text-zinc-400">No reminders yet.</p>
+          ) : (
+            <ul className="mt-4 space-y-4">
+              {items.reminders.map((reminder) => (
+                <li key={reminder.id}>
+                  <p className="text-sm font-medium">{reminder.title}</p>
+                  <p className="mt-1 text-xs text-zinc-500">
+                    {formatDate(reminder.trigger_at)}
+                  </p>
+                  <p className="mt-1 text-xs text-zinc-500">
+                    {reminder.source_transcript}
+                  </p>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
       </section>
 
       <section aria-live="polite" className="border-t border-zinc-200 pt-8">

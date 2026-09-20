@@ -7,7 +7,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from livekit.api import AccessToken, CreateAgentDispatchRequest, LiveKitAPI, VideoGrants
 
-from voice_inbox.models import Task
+from voice_inbox.models import Idea, Reminder, Task
 from voice_inbox.repository import VoiceInboxRepository
 
 load_dotenv(".env.local")
@@ -36,6 +36,16 @@ def health() -> dict[str, str]:
 @app.get("/tasks")
 def list_tasks() -> list[Task]:
     return repository.list_tasks()
+
+
+@app.get("/ideas")
+def list_ideas() -> list[Idea]:
+    return repository.list_ideas()
+
+
+@app.get("/reminders")
+def list_reminders() -> list[Reminder]:
+    return repository.list_reminders()
 
 
 @app.post("/session")

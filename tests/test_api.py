@@ -1,5 +1,6 @@
 import unittest
 import tempfile
+from datetime import datetime
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -13,7 +14,7 @@ class ApiTest(unittest.IsolatedAsyncioTestCase):
     def test_health(self) -> None:
         self.assertEqual(main.health(), {"status": "ok"})
 
-    def test_tasks_returns_persisted_tasks(self) -> None:
+    def test_item_endpoints_return_persisted_items(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
             repository = VoiceInboxRepository(
                 Path(temporary_directory) / "voice-inbox.db"
@@ -23,11 +24,24 @@ class ApiTest(unittest.IsolatedAsyncioTestCase):
                 title="Send the invoice",
                 source_transcript="I need to send the invoice.",
             )
+            idea = repository.create_idea(
+                text="Investigate prefix caching",
+                source_transcript="I want to investigate prefix caching.",
+            )
+            reminder = repository.create_reminder(
+                title="Call Shantanu",
+                trigger_at=datetime.fromisoformat("2026-09-21T11:00:00+02:00"),
+                source_transcript="Remind me to call Shantanu tomorrow at 11.",
+            )
 
             with patch.object(main, "repository", repository):
-                response = main.list_tasks()
+                tasks = main.list_tasks()
+                ideas = main.list_ideas()
+                reminders = main.list_reminders()
 
-        self.assertEqual(response, [task])
+        self.assertEqual(tasks, [task])
+        self.assertEqual(ideas, [idea])
+        self.assertEqual(reminders, [reminder])
 
     async def test_session_requires_livekit_configuration(self) -> None:
         with patch.multiple(
