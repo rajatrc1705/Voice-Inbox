@@ -2,8 +2,8 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Underwriting Voice Agent",
-  description: "A minimal interface for testing an underwriting voice agent.",
+  title: "Voice Inbox",
+  description: "A minimal interface for talking through tasks, ideas, and reminders.",
 };
 
 export default function RootLayout({

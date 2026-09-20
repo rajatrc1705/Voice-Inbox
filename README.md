@@ -1,6 +1,6 @@
-# Underwriting voice agent
+# Voice Inbox
 
-Open the page, press the button, talk to the underwriting voice agent, and see the live transcript.
+Open the page, press the button, speak naturally, and see the live transcript.
 
 ## Architecture
 

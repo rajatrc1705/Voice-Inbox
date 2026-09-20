@@ -12,7 +12,7 @@ LIVEKIT_URL = os.getenv("LIVEKIT_URL")
 LIVEKIT_API_KEY = os.getenv("LIVEKIT_API_KEY")
 LIVEKIT_API_SECRET = os.getenv("LIVEKIT_API_SECRET")
 
-app = FastAPI(title="Underwriting Voice Agent")
+app = FastAPI(title="Voice Inbox")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -51,7 +51,7 @@ async def create_session() -> dict[str, str]:
     try:
         await livekit.agent_dispatch.create_dispatch(
             CreateAgentDispatchRequest(
-                agent_name="underwriting-agent",
+                agent_name="voice-inbox-agent",
                 room=room_name,
             )
         )

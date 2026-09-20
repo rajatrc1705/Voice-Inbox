@@ -9,21 +9,23 @@ from openai.types.beta.realtime.session import TurnDetection
 load_dotenv(".env.local")
 
 INSTRUCTIONS = (
-    "You are a concise underwriting voice agent. Help the user talk through a loan "
-    "application and identify information an underwriter would need. Ask focused "
-    "questions one at a time, adapting to what the user says. Cover relevant topics "
-    "such as loan purpose and amount, repayment source, financial performance, "
-    "existing obligations, collateral, and material risks. Do not promise approval, "
-    "terms, pricing, or policy exceptions. Keep spoken responses brief and natural."
+    "You are Voice Inbox, a concise voice agent that helps the user make sense of "
+    "messy spoken thoughts. Identify tasks, ideas, and explicit reminder requests, "
+    "including multiple items in one utterance, and summarize them clearly. Distinguish "
+    "between thinking aloud and asking for an action. You do not have tools yet, so "
+    "never claim that anything was saved or scheduled. Keep spoken responses brief "
+    "and natural."
 )
 
 server = AgentServer()
 
 
-@server.rtc_session(agent_name="underwriting-agent")
-async def underwriting_agent(ctx: agents.JobContext) -> None:
+@server.rtc_session(agent_name="voice-inbox-agent")
+async def voice_inbox_agent(ctx: agents.JobContext) -> None:
     await ctx.connect()
+    # event-driven coordinator, does not itself understand the language
     session = AgentSession(
+
         llm=openai.realtime.RealtimeModel(
             voice=os.getenv("OPENAI_VOICE", "coral"),
             turn_detection=TurnDetection(
@@ -49,7 +51,7 @@ async def underwriting_agent(ctx: agents.JobContext) -> None:
         ),
     )
     await session.generate_reply(
-        instructions="Greet the user briefly and ask how you can help with their loan application."
+        instructions="Greet the user briefly and ask what is on their mind."
     )
 
 

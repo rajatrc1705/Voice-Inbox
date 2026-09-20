@@ -124,9 +124,9 @@ export default function Home() {
   return (
     <main className="mx-auto flex min-h-screen w-full max-w-2xl flex-col px-6 py-16 text-zinc-900">
       <header className="text-center">
-        <h1 className="text-2xl font-semibold">Underwriting Voice Agent</h1>
+        <h1 className="text-2xl font-semibold">Voice Inbox</h1>
         <p className="mt-2 text-sm text-zinc-500">
-          Start a conversation and speak naturally.
+          Speak naturally and untangle what is on your mind.
         </p>
       </header>
 
