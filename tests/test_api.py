@@ -1,14 +1,33 @@
 import unittest
+import tempfile
+from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from fastapi import HTTPException
 
 from api import main
+from voice_inbox.repository import VoiceInboxRepository
 
 
 class ApiTest(unittest.IsolatedAsyncioTestCase):
     def test_health(self) -> None:
         self.assertEqual(main.health(), {"status": "ok"})
+
+    def test_tasks_returns_persisted_tasks(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            repository = VoiceInboxRepository(
+                Path(temporary_directory) / "voice-inbox.db"
+            )
+            repository.initialize()
+            task = repository.create_task(
+                title="Send the invoice",
+                source_transcript="I need to send the invoice.",
+            )
+
+            with patch.object(main, "repository", repository):
+                response = main.list_tasks()
+
+        self.assertEqual(response, [task])
 
     async def test_session_requires_livekit_configuration(self) -> None:
         with patch.multiple(

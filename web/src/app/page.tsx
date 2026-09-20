@@ -17,11 +17,23 @@ type TranscriptTurn = {
   text: string;
   final: boolean;
 };
+type TaskItem = {
+  id: string;
+  title: string;
+  source_transcript: string;
+  status: string;
+};
 
 const API_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
 
 async function createSession(): Promise<{ livekit_url: string; token: string }> {
   const response = await fetch(`${API_URL}/session`, { method: "POST" });
+  if (!response.ok) throw new Error(await response.text());
+  return response.json();
+}
+
+async function getTasks(): Promise<TaskItem[]> {
+  const response = await fetch(`${API_URL}/tasks`);
   if (!response.ok) throw new Error(await response.text());
   return response.json();
 }
@@ -44,12 +56,21 @@ const stateLabel: Record<VoiceState, string> = {
 export default function Home() {
   const [voiceState, setVoiceState] = useState<VoiceState>("idle");
   const [transcript, setTranscript] = useState<TranscriptTurn[]>([]);
+  const [tasks, setTasks] = useState<TaskItem[]>([]);
   const [error, setError] = useState<string | null>(null);
   const roomRef = useRef<Room | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
   useEffect(() => {
+    let mounted = true;
+    void getTasks()
+      .then((storedTasks) => {
+        if (mounted) setTasks(storedTasks);
+      })
+      .catch(() => undefined);
+
     return () => {
+      mounted = false;
       void roomRef.current?.disconnect();
     };
   }, []);
@@ -97,7 +118,12 @@ export default function Home() {
 
     room.on(RoomEvent.ParticipantAttributesChanged, (attributes) => {
       const nextState = agentState(attributes["lk.agent.state"]);
-      if (nextState) setVoiceState(nextState);
+      if (nextState) {
+        setVoiceState(nextState);
+        if (nextState === "listening") {
+          void getTasks().then(setTasks).catch(() => undefined);
+        }
+      }
     });
 
     room.on(RoomEvent.Disconnected, () => {
@@ -161,6 +187,24 @@ export default function Home() {
         <p className="mt-6 text-sm font-medium text-zinc-600">{stateLabel[voiceState]}</p>
         {error && <p className="mt-2 max-w-md text-center text-sm text-red-600">{error}</p>}
         <audio ref={audioRef} autoPlay />
+      </section>
+
+      <section className="border-t border-zinc-200 py-8">
+        <h2 className="text-sm font-semibold uppercase tracking-wider text-zinc-500">
+          Tasks
+        </h2>
+        {tasks.length === 0 ? (
+          <p className="py-8 text-sm text-zinc-400">No tasks captured yet.</p>
+        ) : (
+          <ul className="mt-6 space-y-5">
+            {tasks.map((task) => (
+              <li key={task.id}>
+                <p className="font-medium">{task.title}</p>
+                <p className="mt-1 text-sm text-zinc-500">{task.source_transcript}</p>
+              </li>
+            ))}
+          </ul>
+        )}
       </section>
 
       <section aria-live="polite" className="border-t border-zinc-200 pt-8">
