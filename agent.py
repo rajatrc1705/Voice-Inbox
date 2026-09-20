@@ -1,8 +1,10 @@
 import asyncio
+import json
 import os
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
+from uuid import uuid4
 from zoneinfo import ZoneInfo
 
 from dotenv import load_dotenv
@@ -11,6 +13,8 @@ from livekit.agents import (
     Agent,
     AgentServer,
     AgentSession,
+    ConversationItemAddedEvent,
+    FunctionToolsExecutedEvent,
     RunContext,
     ToolError,
     UserInputTranscribedEvent,
@@ -21,16 +25,62 @@ from livekit.plugins import noise_cancellation, openai
 from openai.types.beta.realtime.session import TurnDetection
 
 from voice_inbox.repository import VoiceInboxRepository
+from voice_inbox.tracing import ToolCallTrace, TraceWriter, TurnTrace
 
 load_dotenv(".env.local")
 
 repository = VoiceInboxRepository(Path(__file__).with_name("voice_inbox.db"))
+trace_writer = TraceWriter(Path(__file__).with_name("voice_inbox_traces.jsonl"))
 
 
 @dataclass
 class SessionState:
+    session_id: str = field(default_factory=lambda: str(uuid4()))
     source_transcript: str = ""
     transcript_ready: asyncio.Event = field(default_factory=asyncio.Event)
+    active_turn: TurnTrace | None = None
+
+
+def start_turn(state: SessionState, transcript: str, started_at: float) -> None:
+    state.active_turn = TurnTrace(
+        session_id=state.session_id,
+        turn_id=str(uuid4()),
+        user_transcript=transcript,
+        started_at=started_at,
+    )
+
+
+def record_tool_calls(
+    state: SessionState, event: FunctionToolsExecutedEvent
+) -> None:
+    if state.active_turn is None:
+        return
+
+    for function_call, output in event.zipped():
+        result = output.output if output is not None and not output.is_error else None
+        error = output.output if output is not None and output.is_error else None
+        state.active_turn.tool_calls.append(
+            ToolCallTrace(
+                name=function_call.name,
+                arguments=json.loads(function_call.arguments),
+                result=result,
+                error=error,
+                started_at=function_call.created_at,
+                completed_at=output.created_at if output is not None else event.created_at,
+            )
+        )
+
+
+def complete_turn(
+    state: SessionState, assistant_response: str, completed_at: float
+) -> None:
+    if state.active_turn is None:
+        return
+
+    state.active_turn.assistant_response = assistant_response
+    state.active_turn.completed_at = completed_at
+    trace_writer.write(state.active_turn)
+    state.active_turn = None
 
 
 def build_instructions() -> str:
@@ -148,8 +198,21 @@ async def voice_inbox_agent(ctx: agents.JobContext) -> None:
         if event.is_final:
             session.userdata.source_transcript = event.transcript
             session.userdata.transcript_ready.set()
+            start_turn(session.userdata, event.transcript, event.created_at)
         else:
             session.userdata.transcript_ready.clear()
+
+    @session.on("function_tools_executed")
+    def record_executed_tools(event: FunctionToolsExecutedEvent) -> None:
+        record_tool_calls(session.userdata, event)
+
+    @session.on("conversation_item_added")
+    def record_conversation_item(event: ConversationItemAddedEvent) -> None:
+        if event.item.role != "assistant":
+            return
+        response = event.item.text_content
+        if response is not None:
+            complete_turn(session.userdata, response, event.created_at)
 
     await session.start(
         room=ctx.room,
