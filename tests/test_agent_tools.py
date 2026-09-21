@@ -3,7 +3,6 @@ import unittest
 from datetime import datetime
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import patch
 
 import agent
 from voice_inbox.repository import VoiceInboxRepository
@@ -17,25 +16,25 @@ class AgentToolsTest(unittest.IsolatedAsyncioTestCase):
             )
             repository.initialize()
             state = agent.SessionState(
+                repository=repository,
                 source_transcript="I need to send the invoice."
             )
             state.transcript_ready.set()
             context = SimpleNamespace(userdata=state)
 
-            with patch.object(agent, "repository", repository):
-                task_result = await agent.create_task(
-                    context,
-                    title="Send the invoice",
-                )
-                idea_result = await agent.create_idea(
-                    context,
-                    text="Investigate prefix caching",
-                )
-                reminder_result = await agent.create_reminder(
-                    context,
-                    title="Call Shantanu",
-                    trigger_at="2026-09-21T11:00:00+02:00",
-                )
+            task_result = await agent.create_task(
+                context,
+                title="Send the invoice",
+            )
+            idea_result = await agent.create_idea(
+                context,
+                text="Investigate prefix caching",
+            )
+            reminder_result = await agent.create_reminder(
+                context,
+                title="Call Shantanu",
+                trigger_at="2026-09-21T11:00:00+02:00",
+            )
 
             tasks = repository.list_tasks()
             ideas = repository.list_ideas()

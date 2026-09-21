@@ -23,6 +23,7 @@ dist/
 
 *.log
 *.jsonl
+eval_results/
 *.pem
 *.key
 fly.toml

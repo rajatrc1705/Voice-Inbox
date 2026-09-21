@@ -1,0 +1,214 @@
+[
+  {
+    "id": "clear_task",
+    "kind": "regression",
+    "tags": [
+      "task",
+      "single_turn"
+    ],
+    "now": "2026-09-21T09:00:00+02:00",
+    "turns": [
+      {
+        "user": "I need to send the invoice.",
+        "expected": {
+          "tool_calls": [
+            {
+              "name": "create_task",
+              "argument_contains": {
+                "title": [
+                  "send",
+                  "invoice"
+                ]
+              },
+              "succeeds": true
+            }
+          ],
+          "state": {
+            "tasks": 1,
+            "ideas": 0,
+            "reminders": 0
+          }
+        }
+      }
+    ]
+  },
+  {
+    "id": "exploratory_idea",
+    "kind": "regression",
+    "tags": [
+      "idea",
+      "single_turn"
+    ],
+    "now": "2026-09-21T09:00:00+02:00",
+    "turns": [
+      {
+        "user": "I want to explore whether prefix caching could reduce latency.",
+        "expected": {
+          "tool_calls": [
+            {
+              "name": "create_idea",
+              "argument_contains": {
+                "text": [
+                  "prefix",
+                  "caching",
+                  "latency"
+                ]
+              },
+              "succeeds": true
+            }
+          ],
+          "state": {
+            "tasks": 0,
+            "ideas": 1,
+            "reminders": 0
+          }
+        }
+      }
+    ]
+  },
+  {
+    "id": "complete_reminder",
+    "kind": "regression",
+    "tags": [
+      "reminder",
+      "time_extraction",
+      "single_turn"
+    ],
+    "now": "2026-09-21T09:00:00+02:00",
+    "turns": [
+      {
+        "user": "Remind me tomorrow at eleven to call Shantanu.",
+        "expected": {
+          "tool_calls": [
+            {
+              "name": "create_reminder",
+              "arguments": {
+                "trigger_at": "2026-09-22T11:00:00+02:00"
+              },
+              "argument_contains": {
+                "title": [
+                  "call",
+                  "shantanu"
+                ]
+              },
+              "succeeds": true
+            }
+          ],
+          "response_contains": [
+            "recorded"
+          ],
+          "state": {
+            "tasks": 0,
+            "ideas": 0,
+            "reminders": 1
+          },
+          "response_not_contains": [
+            "i've set",
+            "i have set",
+            "reminder is set",
+            "i'll remind",
+            "i will remind",
+            "i'll notify",
+            "i will notify",
+            "i'll alert",
+            "i will alert"
+          ]
+        }
+      }
+    ]
+  },
+  {
+    "id": "completed_action_is_not_captured",
+    "kind": "regression",
+    "tags": [
+      "negative_case",
+      "single_turn"
+    ],
+    "now": "2026-09-21T09:00:00+02:00",
+    "turns": [
+      {
+        "user": "I already sent the invoice this morning.",
+        "expected": {
+          "tool_calls": [],
+          "state": {
+            "tasks": 0,
+            "ideas": 0,
+            "reminders": 0
+          }
+        }
+      }
+    ]
+  },
+  {
+    "id": "reminder_clarification_uses_conversation_state",
+    "kind": "regression",
+    "tags": [
+      "reminder",
+      "clarification",
+      "multi_turn",
+      "conversation_state"
+    ],
+    "now": "2026-09-21T09:00:00+02:00",
+    "turns": [
+      {
+        "user": "Remind me next week to call Shantanu.",
+        "expected": {
+          "tool_calls": [],
+          "clarification": true,
+          "response_contains": [
+            "day",
+            "time"
+          ],
+          "response_not_contains": [
+            "recorded"
+          ],
+          "state": {
+            "tasks": 0,
+            "ideas": 0,
+            "reminders": 0
+          }
+        }
+      },
+      {
+        "user": "Tuesday at eleven.",
+        "expected": {
+          "tool_calls": [
+            {
+              "name": "create_reminder",
+              "arguments": {
+                "trigger_at": "2026-09-29T11:00:00+02:00"
+              },
+              "argument_contains": {
+                "title": [
+                  "call",
+                  "shantanu"
+                ]
+              },
+              "succeeds": true
+            }
+          ],
+          "clarification": false,
+          "response_contains": [
+            "recorded"
+          ],
+          "state": {
+            "tasks": 0,
+            "ideas": 0,
+            "reminders": 1
+          },
+          "response_not_contains": [
+            "i've set",
+            "i have set",
+            "reminder is set",
+            "i'll remind",
+            "i will remind",
+            "i'll notify",
+            "i will notify",
+            "i'll alert",
+            "i will alert"
+          ]
+        }
+      }
+    ]
+  }
+]

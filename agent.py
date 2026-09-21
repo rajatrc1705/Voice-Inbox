@@ -35,6 +35,7 @@ trace_writer = TraceWriter(Path(__file__).with_name("voice_inbox_traces.jsonl"))
 
 @dataclass
 class SessionState:
+    repository: VoiceInboxRepository
     session_id: str = field(default_factory=lambda: str(uuid4()))
     source_transcript: str = ""
     transcript_ready: asyncio.Event = field(default_factory=asyncio.Event)
@@ -83,9 +84,9 @@ def complete_turn(
     state.active_turn = None
 
 
-def build_instructions() -> str:
+def build_instructions(now: datetime | None = None) -> str:
     timezone = ZoneInfo(os.getenv("VOICE_INBOX_TIMEZONE", "Europe/Berlin"))
-    local_now = datetime.now(timezone)
+    local_now = now.astimezone(timezone) if now is not None else datetime.now(timezone)
     return (
         "You are Voice Inbox, a concise English-speaking voice agent that turns messy "
         "spoken thoughts into useful items. Use create_task for a concrete action the "
@@ -97,9 +98,43 @@ def build_instructions() -> str:
         "for missing reminder timing instead of calling the tool. A reminder request is "
         "not also a task. Do not capture completed actions. One utterance may require "
         "multiple tool calls. Only claim an item was captured after its tool succeeds. "
-        "Reminder delivery is not active yet, so say a reminder was recorded, not that "
-        f"the user will be notified. The current local time is {local_now.isoformat()} "
+        "Reminder delivery is not active yet. After create_reminder succeeds, say "
+        "'Recorded your reminder. Notifications are not active yet.' You may include "
+        "the title and time. Never say the reminder is set or scheduled, or promise "
+        "to remind, notify, or alert the user. "
+        f"The current local time is {local_now.isoformat()} "
         f"in {timezone.key}. Keep spoken responses brief and natural."
+    )
+
+
+def build_agent(now: datetime | None = None) -> Agent:
+    return Agent(
+        instructions=build_instructions(now),
+        tools=[create_task, create_idea, create_reminder],
+    )
+
+def build_realtime_model() -> openai.realtime.RealtimeModel:
+    return openai.realtime.RealtimeModel(
+        model=os.getenv("OPENAI_REALTIME_MODEL", "gpt-realtime"),
+        voice=os.getenv("OPENAI_VOICE", "coral"),
+        turn_detection=TurnDetection(
+            type="server_vad",
+            threshold=0.6,
+            prefix_padding_ms=300,
+            silence_duration_ms=500,
+            create_response=True,
+            interrupt_response=True,
+        ),
+    )
+
+
+def build_session(
+    session_repository: VoiceInboxRepository,
+    realtime_model: openai.realtime.RealtimeModel | None = None,
+) -> AgentSession[SessionState]:
+    return AgentSession[SessionState](
+        userdata=SessionState(repository=session_repository),
+        llm=realtime_model or build_realtime_model(),
     )
 
 
@@ -120,7 +155,7 @@ async def create_task(context: RunContext[SessionState], title: str) -> str:
         title: A short action-oriented title for the task.
     """
 
-    task = repository.create_task(
+    task = context.userdata.repository.create_task(
         title=title,
         source_transcript=await source_transcript(context),
     )
@@ -135,7 +170,7 @@ async def create_idea(context: RunContext[SessionState], text: str) -> str:
         text: A concise description of the idea.
     """
 
-    idea = repository.create_idea(
+    idea = context.userdata.repository.create_idea(
         text=text,
         source_transcript=await source_transcript(context),
     )
@@ -146,7 +181,10 @@ async def create_idea(context: RunContext[SessionState], text: str) -> str:
 async def create_reminder(
     context: RunContext[SessionState], title: str, trigger_at: str
 ) -> str:
-    """Record an explicit reminder request with a concrete notification time.
+    """Store a reminder request and its requested time; no notification is scheduled.
+
+    Delivery is inactive. Confirm only that the reminder was recorded and explain
+    that notifications are not active yet.
 
     Args:
         title: A short description of what the user wants to be reminded about.
@@ -158,12 +196,15 @@ async def create_reminder(
     except ValueError as error:
         raise ToolError("trigger_at must be an ISO 8601 timestamp.") from error
 
-    reminder = repository.create_reminder(
+    reminder = context.userdata.repository.create_reminder(
         title=title,
         trigger_at=trigger_time,
         source_transcript=await source_transcript(context),
     )
-    return f"Recorded reminder {reminder.id}: {reminder.title} at {trigger_at}"
+    return (
+        f"Recorded reminder {reminder.id}: {reminder.title} at {trigger_at}. "
+        "Notifications are not active yet; no notification has been scheduled."
+    )
 
 
 def initialize_process(_: object) -> None:
@@ -177,21 +218,7 @@ server = AgentServer(setup_fnc=initialize_process)
 async def voice_inbox_agent(ctx: agents.JobContext) -> None:
     await ctx.connect()
     # event-driven coordinator, does not itself understand the language
-    session = AgentSession[SessionState](
-        userdata=SessionState(),
-
-        llm=openai.realtime.RealtimeModel(
-            voice=os.getenv("OPENAI_VOICE", "coral"),
-            turn_detection=TurnDetection(
-                type="server_vad",
-                threshold=0.6,
-                prefix_padding_ms=300,
-                silence_duration_ms=500,
-                create_response=True,
-                interrupt_response=True,
-            ),
-        )
-    )
+    session = build_session(repository)
 
     @session.on("user_input_transcribed")
     def record_user_transcript(event: UserInputTranscribedEvent) -> None:
@@ -216,10 +243,7 @@ async def voice_inbox_agent(ctx: agents.JobContext) -> None:
 
     await session.start(
         room=ctx.room,
-        agent=Agent(
-            instructions=build_instructions(),
-            tools=[create_task, create_idea, create_reminder],
-        ),
+        agent=build_agent(),
         room_options=room_io.RoomOptions(
             audio_input=room_io.AudioInputOptions(
                 noise_cancellation=lambda params: noise_cancellation.BVCTelephony()

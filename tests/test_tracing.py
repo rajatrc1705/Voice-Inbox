@@ -26,7 +26,7 @@ class TracingTest(unittest.TestCase):
         ]
 
     def test_records_successful_tool_call_and_completed_turn(self) -> None:
-        state = agent.SessionState(session_id="session-1")
+        state = agent.SessionState(repository=agent.repository, session_id="session-1")
         agent.start_turn(state, "I need to send the invoice", 10.0)
         event = FunctionToolsExecutedEvent(
             function_calls=[
@@ -75,7 +75,7 @@ class TracingTest(unittest.TestCase):
         self.assertIsNone(state.active_turn)
 
     def test_records_failed_tool_call(self) -> None:
-        state = agent.SessionState(session_id="session-1")
+        state = agent.SessionState(repository=agent.repository, session_id="session-1")
         agent.start_turn(state, "Remind me sometime", 20.0)
         event = FunctionToolsExecutedEvent(
             function_calls=[
@@ -107,7 +107,7 @@ class TracingTest(unittest.TestCase):
         )
 
     def test_records_turn_without_tool_calls(self) -> None:
-        state = agent.SessionState(session_id="session-1")
+        state = agent.SessionState(repository=agent.repository, session_id="session-1")
         agent.start_turn(state, "Remind me next week", 30.0)
 
         with patch.object(agent, "trace_writer", self.writer):
@@ -118,7 +118,7 @@ class TracingTest(unittest.TestCase):
         self.assertEqual(trace["assistant_response"], "What day and time next week?")
 
     def test_writes_one_json_line_per_completed_turn(self) -> None:
-        state = agent.SessionState(session_id="session-1")
+        state = agent.SessionState(repository=agent.repository, session_id="session-1")
 
         with patch.object(agent, "trace_writer", self.writer):
             agent.start_turn(state, "First turn", 1.0)
