@@ -159,6 +159,62 @@ class VoiceInboxRepository:
             connection.commit()
         return reminder
 
+    def update_task_title(self, task_id: str, title: str) -> Task:
+        with closing(self._connect()) as connection:
+            cursor = connection.execute(
+                "UPDATE tasks SET title = ?, updated_at = ? WHERE id = ? AND status = ?",
+                (title, _serialize_datetime(utc_now()), task_id, TaskStatus.OPEN),
+            )
+            if cursor.rowcount == 0:
+                raise ValueError("Task not found or no longer open.")
+            row = connection.execute(
+                "SELECT * FROM tasks WHERE id = ?", (task_id,)
+            ).fetchone()
+            connection.commit()
+        return self._task_from_row(row)
+
+    def update_idea_text(self, idea_id: str, text: str) -> Idea:
+        with closing(self._connect()) as connection:
+            cursor = connection.execute(
+                "UPDATE ideas SET text = ? WHERE id = ?", (text, idea_id)
+            )
+            if cursor.rowcount == 0:
+                raise ValueError("Idea not found.")
+            row = connection.execute("SELECT * FROM ideas WHERE id = ?", (idea_id,)).fetchone()
+            connection.commit()
+        return self._idea_from_row(row)
+
+    def update_reminder(
+        self,
+        reminder_id: str,
+        *,
+        title: str | None = None,
+        trigger_at: datetime | None = None,
+    ) -> Reminder:
+        if title is None and trigger_at is None:
+            raise ValueError("Provide a new reminder title or time.")
+        with closing(self._connect()) as connection:
+            cursor = connection.execute(
+                """UPDATE reminders
+                SET title = COALESCE(?, title), trigger_at = COALESCE(?, trigger_at),
+                    updated_at = ?
+                WHERE id = ? AND status = ?""",
+                (
+                    title,
+                    _serialize_datetime(trigger_at),
+                    _serialize_datetime(utc_now()),
+                    reminder_id,
+                    ReminderStatus.SCHEDULED,
+                ),
+            )
+            if cursor.rowcount == 0:
+                raise ValueError("Reminder not found or no longer active.")
+            row = connection.execute(
+                "SELECT * FROM reminders WHERE id = ?", (reminder_id,)
+            ).fetchone()
+            connection.commit()
+        return self._reminder_from_row(row)
+
     def list_tasks(self) -> list[Task]:
         with closing(self._connect()) as connection:
             rows = connection.execute(

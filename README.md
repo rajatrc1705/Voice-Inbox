@@ -60,3 +60,19 @@ one new idea, and one new reminder. The reminder should be recorded without prom
 notification delivery. The latest record in `voice_inbox_traces.jsonl` should contain
 all three tool calls. Pause for about a second between the task, idea, and reminder
 while speaking: the agent should wait for the complete thought before replying.
+
+## Check conversational corrections
+
+The agent can correct the most recently created task, idea, or reminder of each type
+within the current conversation. A correction updates the existing row.
+
+```bash
+uv run python -m evals.run --case correct_recent_task
+uv run python -m evals.run --case correct_recent_idea
+uv run python -m evals.run --case correct_recent_reminder
+```
+
+For a voice check, say “Remind me tomorrow at eleven to call Alex,” wait for the
+response, then say “Actually make that four in the afternoon.” The page should
+show one reminder for 4 PM. Refresh the page to confirm the correction persisted.
+Recent-item references currently last for one conversation session.

@@ -172,11 +172,16 @@ def grade_turn(
 
     state = expected.get("state", {})
     if state:
+        reminders = repository.list_reminders()
         actual_state = {
             "tasks": len(repository.list_tasks()),
             "ideas": len(repository.list_ideas()),
-            "reminders": len(repository.list_reminders()),
+            "reminders": len(reminders),
         }
+        if "reminder_trigger_at" in state:
+            actual_state["reminder_trigger_at"] = (
+                reminders[0].trigger_at.isoformat() if len(reminders) == 1 else None
+            )
         for item_type, expected_count in state.items():
             checks.append(
                 EvaluationCheck(

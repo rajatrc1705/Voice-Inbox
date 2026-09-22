@@ -192,6 +192,73 @@
     ]
   },
   {
+    "id": "correct_recent_task",
+    "kind": "regression",
+    "tags": ["correction", "task", "multi_turn"],
+    "now": "2026-09-21T09:00:00+02:00",
+    "turns": [
+      {
+        "user": "I need to send the invoice.",
+        "expected": {
+          "tool_calls": [{"name": "create_task", "argument_contains": {"title": ["send", "invoice"]}, "succeeds": true}],
+          "state": {"tasks": 1, "ideas": 0, "reminders": 0}
+        }
+      },
+      {
+        "user": "Actually make that the Jetson invoice.",
+        "expected": {
+          "tool_calls": [{"name": "update_recent_task", "argument_contains": {"title": ["send", "jetson", "invoice"]}, "succeeds": true}],
+          "state": {"tasks": 1, "ideas": 0, "reminders": 0}
+        }
+      }
+    ]
+  },
+  {
+    "id": "correct_recent_idea",
+    "kind": "regression",
+    "tags": ["correction", "idea", "multi_turn"],
+    "now": "2026-09-21T09:00:00+02:00",
+    "turns": [
+      {
+        "user": "I want to explore prefix caching.",
+        "expected": {
+          "tool_calls": [{"name": "create_idea", "argument_contains": {"text": ["prefix", "caching"]}, "succeeds": true}],
+          "state": {"tasks": 0, "ideas": 1, "reminders": 0}
+        }
+      },
+      {
+        "user": "Actually, make the idea about KV cache eviction instead.",
+        "expected": {
+          "tool_calls": [{"name": "update_recent_idea", "argument_contains": {"text": ["kv", "cache", "eviction"]}, "succeeds": true}],
+          "state": {"tasks": 0, "ideas": 1, "reminders": 0}
+        }
+      }
+    ]
+  },
+  {
+    "id": "correct_recent_reminder",
+    "kind": "regression",
+    "tags": ["correction", "reminder", "multi_turn"],
+    "now": "2026-09-21T09:00:00+02:00",
+    "turns": [
+      {
+        "user": "Remind me tomorrow at eleven to call Alex.",
+        "expected": {
+          "tool_calls": [{"name": "create_reminder", "arguments": {"trigger_at": "2026-09-22T11:00:00+02:00"}, "succeeds": true}],
+          "state": {"tasks": 0, "ideas": 0, "reminders": 1}
+        }
+      },
+      {
+        "user": "Actually make that four in the afternoon.",
+        "expected": {
+          "tool_calls": [{"name": "update_recent_reminder", "arguments": {"trigger_at": "2026-09-22T16:00:00+02:00"}, "succeeds": true}],
+          "response_not_contains": ["i'll remind", "i will remind", "i'll notify", "i will notify"],
+          "state": {"tasks": 0, "ideas": 0, "reminders": 1, "reminder_trigger_at": "2026-09-22T16:00:00+02:00"}
+        }
+      }
+    ]
+  },
+  {
     "id": "reminder_clarification_uses_conversation_state",
     "kind": "regression",
     "tags": [

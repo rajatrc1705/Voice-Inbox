@@ -1,5 +1,6 @@
 import tempfile
 import unittest
+from datetime import datetime
 from pathlib import Path
 
 from livekit.agents.llm import ChatMessage, FunctionCall, FunctionCallOutput
@@ -159,6 +160,50 @@ class EvaluationTest(unittest.TestCase):
         self.assertEqual(metrics["application_state"]["rate"], 0.0)
         self.assertEqual(metrics["case_success"]["rate"], 0.0)
         self.assertEqual(metrics["average_turn_duration"], 2.0)
+
+    def test_correction_grader_checks_updated_reminder_time(self) -> None:
+        reminder = self.repository.create_reminder(
+            title="Call Alex",
+            trigger_at=datetime.fromisoformat("2026-09-22T11:00:00+02:00"),
+            source_transcript="Remind me to call Alex tomorrow at eleven",
+        )
+        self.repository.update_reminder(
+            reminder.id,
+            trigger_at=datetime.fromisoformat("2026-09-22T16:00:00+02:00"),
+        )
+        observation = observe_run(
+            [ChatMessageEvent(item=ChatMessage(role="assistant", content=["Updated."]))],
+            duration=1.0,
+        )
+
+        checks = grade_turn(
+            {
+                "tool_calls": [],
+                "state": {
+                    "reminders": 1,
+                    "reminder_trigger_at": "2026-09-22T16:00:00+02:00",
+                },
+            },
+            observation,
+            self.repository,
+        )
+        self.assertTrue(all(check.passed for check in checks))
+
+        wrong_time_checks = grade_turn(
+            {
+                "tool_calls": [],
+                "state": {"reminder_trigger_at": "2026-09-22T17:00:00+02:00"},
+            },
+            observation,
+            self.repository,
+        )
+        self.assertFalse(
+            next(
+                check.passed
+                for check in wrong_time_checks
+                if check.name == "state_reminder_trigger_at"
+            )
+        )
 
 
 if __name__ == "__main__":

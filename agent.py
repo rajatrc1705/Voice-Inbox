@@ -37,6 +37,7 @@ trace_writer = TraceWriter(Path(__file__).with_name("voice_inbox_traces.jsonl"))
 class SessionState:
     repository: VoiceInboxRepository
     session_id: str = field(default_factory=lambda: str(uuid4()))
+    recent_item_ids: dict[str, str] = field(default_factory=dict)
     source_transcript: str = ""
     transcript_ready: asyncio.Event = field(default_factory=asyncio.Event)
     active_turn: TurnTrace | None = None
@@ -98,6 +99,9 @@ def build_instructions(now: datetime | None = None) -> str:
         "for missing reminder timing instead of calling the tool. A reminder request is "
         "not also a task. Do not capture completed actions. When one utterance contains "
         "several independent items, call the appropriate tool once for each item. "
+        "When the user corrects a recently captured item, use the matching "
+        "update_recent tool instead of creating another item. Preserve details the "
+        "user did not change. If the item being corrected is unclear, ask which one. "
         "Only claim an item was captured after its tool succeeds. "
         "Reminder delivery is not active yet. After create_reminder succeeds, say "
         "'Recorded your reminder. Notifications are not active yet.' You may include "
@@ -111,7 +115,14 @@ def build_instructions(now: datetime | None = None) -> str:
 def build_agent(now: datetime | None = None) -> Agent:
     return Agent(
         instructions=build_instructions(now),
-        tools=[create_task, create_idea, create_reminder],
+        tools=[
+            create_task,
+            create_idea,
+            create_reminder,
+            update_recent_task,
+            update_recent_idea,
+            update_recent_reminder,
+        ],
     )
 
 def build_realtime_model() -> openai.realtime.RealtimeModel:
@@ -158,6 +169,7 @@ async def create_task(context: RunContext[SessionState], title: str) -> str:
         title=title,
         source_transcript=await source_transcript(context),
     )
+    context.userdata.recent_item_ids["task"] = task.id
     return f"Created task {task.id}: {task.title}"
 
 
@@ -173,6 +185,7 @@ async def create_idea(context: RunContext[SessionState], text: str) -> str:
         text=text,
         source_transcript=await source_transcript(context),
     )
+    context.userdata.recent_item_ids["idea"] = idea.id
     return f"Created idea {idea.id}: {idea.text}"
 
 
@@ -200,9 +213,82 @@ async def create_reminder(
         trigger_at=trigger_time,
         source_transcript=await source_transcript(context),
     )
+    context.userdata.recent_item_ids["reminder"] = reminder.id
     return (
         f"Recorded reminder {reminder.id}: {reminder.title} at {trigger_at}. "
         "Notifications are not active yet; no notification has been scheduled."
+    )
+
+
+@function_tool
+async def update_recent_task(context: RunContext[SessionState], title: str) -> str:
+    """Correct the most recently created task in this conversation.
+
+    Args:
+        title: The corrected action-oriented task title.
+    """
+
+    task_id = context.userdata.recent_item_ids.get("task")
+    if task_id is None:
+        raise ToolError("No recent task to update. Ask the user which task they mean.")
+    try:
+        task = context.userdata.repository.update_task_title(task_id, title)
+    except ValueError as error:
+        raise ToolError(str(error)) from error
+    return f"Updated task {task.id}: {task.title}"
+
+
+@function_tool
+async def update_recent_idea(context: RunContext[SessionState], text: str) -> str:
+    """Correct the most recently created idea in this conversation.
+
+    Args:
+        text: The corrected idea or note text.
+    """
+
+    idea_id = context.userdata.recent_item_ids.get("idea")
+    if idea_id is None:
+        raise ToolError("No recent idea to update. Ask the user which idea they mean.")
+    try:
+        idea = context.userdata.repository.update_idea_text(idea_id, text)
+    except ValueError as error:
+        raise ToolError(str(error)) from error
+    return f"Updated idea {idea.id}: {idea.text}"
+
+
+@function_tool
+async def update_recent_reminder(
+    context: RunContext[SessionState],
+    title: str | None = None,
+    trigger_at: str | None = None,
+) -> str:
+    """Correct the most recently created reminder; omit unchanged fields.
+
+    Args:
+        title: A corrected reminder title, only if the user changed it.
+        trigger_at: A corrected ISO 8601 timestamp with UTC offset, only if changed.
+    """
+
+    reminder_id = context.userdata.recent_item_ids.get("reminder")
+    if reminder_id is None:
+        raise ToolError("No recent reminder to update. Ask which reminder they mean.")
+    if title is None and trigger_at is None:
+        raise ToolError("Provide a changed reminder title or time.")
+    trigger_time = None
+    if trigger_at is not None:
+        try:
+            trigger_time = datetime.fromisoformat(trigger_at)
+        except ValueError as error:
+            raise ToolError("trigger_at must be an ISO 8601 timestamp.") from error
+    try:
+        reminder = context.userdata.repository.update_reminder(
+            reminder_id, title=title, trigger_at=trigger_time
+        )
+    except ValueError as error:
+        raise ToolError(str(error)) from error
+    return (
+        f"Updated recorded reminder {reminder.id}: {reminder.title} at "
+        f"{reminder.trigger_at.isoformat()}. Notifications are not active yet."
     )
 
 
