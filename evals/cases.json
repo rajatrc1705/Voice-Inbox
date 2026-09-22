@@ -140,6 +140,58 @@
     ]
   },
   {
+    "id": "multiple_items_in_one_turn",
+    "kind": "regression",
+    "tags": [
+      "multi_item",
+      "task",
+      "idea",
+      "reminder",
+      "single_turn"
+    ],
+    "now": "2026-09-21T09:00:00+02:00",
+    "turns": [
+      {
+        "user": "I need to send the invoice, I want to explore prefix caching, and remind me tomorrow at eleven to call Alex.",
+        "expected": {
+          "tool_calls": [
+            {
+              "name": "create_task",
+              "argument_contains": {
+                "title": ["send", "invoice"]
+              },
+              "succeeds": true
+            },
+            {
+              "name": "create_idea",
+              "argument_contains": {
+                "text": ["prefix", "caching"]
+              },
+              "succeeds": true
+            },
+            {
+              "name": "create_reminder",
+              "arguments": {
+                "trigger_at": "2026-09-22T11:00:00+02:00"
+              },
+              "argument_contains": {
+                "title": ["call", "alex"]
+              },
+              "succeeds": true
+            }
+          ],
+          "response_contains": ["recorded"],
+          "response_not_contains": ["i'll remind", "i will remind", "i'll notify", "i will notify"],
+          "state": {
+            "tasks": 1,
+            "ideas": 1,
+            "reminders": 1
+          }
+        }
+      }
+    ]
+  },
+  {
     "id": "reminder_clarification_uses_conversation_state",
     "kind": "regression",
     "tags": [

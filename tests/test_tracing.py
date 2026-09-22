@@ -106,6 +106,47 @@ class TracingTest(unittest.TestCase):
             "trigger_at must be an ISO 8601 timestamp.",
         )
 
+    def test_records_multiple_tool_calls_in_one_turn(self) -> None:
+        state = agent.SessionState(repository=agent.repository, session_id="session-1")
+        agent.start_turn(state, "Capture a task, idea, and reminder", 10.0)
+        calls = [
+            ("create_task", '{"title":"Send invoice"}'),
+            ("create_idea", '{"text":"Explore prefix caching"}'),
+            ("create_reminder", '{"title":"Call Alex","trigger_at":"2026-09-22T11:00:00+02:00"}'),
+        ]
+
+        for index, (name, arguments) in enumerate(calls, start=1):
+            agent.record_tool_calls(
+                state,
+                FunctionToolsExecutedEvent(
+                    function_calls=[
+                        FunctionCall(
+                            call_id=f"call-{index}",
+                            name=name,
+                            arguments=arguments,
+                            created_at=10.0 + index,
+                        )
+                    ],
+                    function_call_outputs=[
+                        FunctionCallOutput(
+                            call_id=f"call-{index}",
+                            name=name,
+                            output=f"Created item {index}",
+                            is_error=False,
+                            created_at=11.0 + index,
+                        )
+                    ],
+                ),
+            )
+
+        with patch.object(agent, "trace_writer", self.writer):
+            agent.complete_turn(state, "All three items recorded.", 15.0)
+
+        traces = self.read_traces()
+        self.assertEqual(len(traces), 1)
+        self.assertEqual([call["name"] for call in traces[0]["tool_calls"]], [name for name, _ in calls])
+        self.assertTrue(all(call["error"] is None for call in traces[0]["tool_calls"]))
+
     def test_records_turn_without_tool_calls(self) -> None:
         state = agent.SessionState(repository=agent.repository, session_id="session-1")
         agent.start_turn(state, "Remind me next week", 30.0)

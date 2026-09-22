@@ -47,3 +47,16 @@ Reports are written to the ignored `eval_results/` directory.
 These runs call the configured OpenAI Realtime model and incur API usage. They send
 the scripted case text and agent instructions, using temporary databases rather than
 your saved inbox items. They do not verify microphone capture or audio playback.
+
+To check several items in one turn, run:
+
+```bash
+uv run python -m evals.run --case multiple_items_in_one_turn
+```
+
+For a voice check, say “I need to send the invoice, I want to explore prefix caching,
+and remind me tomorrow at eleven to call Alex.” The page should show one new task,
+one new idea, and one new reminder. The reminder should be recorded without promising
+notification delivery. The latest record in `voice_inbox_traces.jsonl` should contain
+all three tool calls. Pause for about a second between the task, idea, and reminder
+while speaking: the agent should wait for the complete thought before replying.

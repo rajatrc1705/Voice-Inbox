@@ -17,7 +17,10 @@ class AgentToolsTest(unittest.IsolatedAsyncioTestCase):
             repository.initialize()
             state = agent.SessionState(
                 repository=repository,
-                source_transcript="I need to send the invoice."
+                source_transcript=(
+                    "I need to send the invoice, explore prefix caching, "
+                    "and remind me tomorrow at eleven to call Alex."
+                )
             )
             state.transcript_ready.set()
             context = SimpleNamespace(userdata=state)
@@ -32,8 +35,8 @@ class AgentToolsTest(unittest.IsolatedAsyncioTestCase):
             )
             reminder_result = await agent.create_reminder(
                 context,
-                title="Call Shantanu",
-                trigger_at="2026-09-21T11:00:00+02:00",
+                title="Call Alex",
+                trigger_at="2026-09-22T11:00:00+02:00",
             )
 
             tasks = repository.list_tasks()
@@ -42,17 +45,16 @@ class AgentToolsTest(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(len(tasks), 1)
         self.assertEqual(tasks[0].title, "Send the invoice")
-        self.assertEqual(
-            tasks[0].source_transcript,
-            "I need to send the invoice.",
-        )
+        self.assertEqual(tasks[0].source_transcript, state.source_transcript)
         self.assertIn(tasks[0].id, task_result)
         self.assertEqual(ideas[0].text, "Investigate prefix caching")
+        self.assertEqual(ideas[0].source_transcript, state.source_transcript)
         self.assertIn(ideas[0].id, idea_result)
-        self.assertEqual(reminders[0].title, "Call Shantanu")
+        self.assertEqual(reminders[0].title, "Call Alex")
+        self.assertEqual(reminders[0].source_transcript, state.source_transcript)
         self.assertEqual(
             reminders[0].trigger_at,
-            datetime.fromisoformat("2026-09-21T11:00:00+02:00"),
+            datetime.fromisoformat("2026-09-22T11:00:00+02:00"),
         )
         self.assertIn(reminders[0].id, reminder_result)
 

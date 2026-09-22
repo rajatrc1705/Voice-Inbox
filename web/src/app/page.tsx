@@ -20,19 +20,16 @@ type TranscriptTurn = {
 type TaskItem = {
   id: string;
   title: string;
-  source_transcript: string;
   status: string;
 };
 type IdeaItem = {
   id: string;
   text: string;
-  source_transcript: string;
 };
 type ReminderItem = {
   id: string;
   title: string;
   trigger_at: string;
-  source_transcript: string;
   status: string;
 };
 type StoredItems = {
@@ -250,7 +247,6 @@ export default function Home() {
               {items.tasks.map((task) => (
                 <li key={task.id}>
                   <p className="text-sm font-medium">{task.title}</p>
-                  <p className="mt-1 text-xs text-zinc-500">{task.source_transcript}</p>
                 </li>
               ))}
             </ul>
@@ -268,7 +264,6 @@ export default function Home() {
               {items.ideas.map((idea) => (
                 <li key={idea.id}>
                   <p className="text-sm font-medium">{idea.text}</p>
-                  <p className="mt-1 text-xs text-zinc-500">{idea.source_transcript}</p>
                 </li>
               ))}
             </ul>
@@ -288,9 +283,6 @@ export default function Home() {
                   <p className="text-sm font-medium">{reminder.title}</p>
                   <p className="mt-1 text-xs text-zinc-500">
                     {formatDate(reminder.trigger_at)}
-                  </p>
-                  <p className="mt-1 text-xs text-zinc-500">
-                    {reminder.source_transcript}
                   </p>
                 </li>
               ))}

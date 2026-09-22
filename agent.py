@@ -22,7 +22,7 @@ from livekit.agents import (
     room_io,
 )
 from livekit.plugins import noise_cancellation, openai
-from openai.types.beta.realtime.session import TurnDetection
+from openai.types.realtime.realtime_audio_input_turn_detection import SemanticVad
 
 from voice_inbox.repository import VoiceInboxRepository
 from voice_inbox.tracing import ToolCallTrace, TraceWriter, TurnTrace
@@ -96,8 +96,9 @@ def build_instructions(now: datetime | None = None) -> str:
         "create_reminder only when the user explicitly asks to be notified and provides "
         "enough date and time information to calculate a concrete timestamp. Ask only "
         "for missing reminder timing instead of calling the tool. A reminder request is "
-        "not also a task. Do not capture completed actions. One utterance may require "
-        "multiple tool calls. Only claim an item was captured after its tool succeeds. "
+        "not also a task. Do not capture completed actions. When one utterance contains "
+        "several independent items, call the appropriate tool once for each item. "
+        "Only claim an item was captured after its tool succeeds. "
         "Reminder delivery is not active yet. After create_reminder succeeds, say "
         "'Recorded your reminder. Notifications are not active yet.' You may include "
         "the title and time. Never say the reminder is set or scheduled, or promise "
@@ -117,11 +118,9 @@ def build_realtime_model() -> openai.realtime.RealtimeModel:
     return openai.realtime.RealtimeModel(
         model=os.getenv("OPENAI_REALTIME_MODEL", "gpt-realtime"),
         voice=os.getenv("OPENAI_VOICE", "coral"),
-        turn_detection=TurnDetection(
-            type="server_vad",
-            threshold=0.6,
-            prefix_padding_ms=300,
-            silence_duration_ms=500,
+        turn_detection=SemanticVad(
+            type="semantic_vad",
+            eagerness="low",
             create_response=True,
             interrupt_response=True,
         ),
