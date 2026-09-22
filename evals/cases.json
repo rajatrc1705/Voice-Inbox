@@ -1,5 +1,66 @@
 [
   {
+    "id": "web_question_continues_after_source_request",
+    "kind": "regression",
+    "tags": ["web_context", "multi_turn", "continuation", "citation"],
+    "now": "2026-09-21T09:00:00+02:00",
+    "workspace_files": {
+      "resume.md": "In 2024 I worked at Acme Robotics.\n"
+    },
+    "web_page": {
+      "url": "https://example.com",
+      "html": "<html><body><article><h1>Example Domain</h1><p>This domain is for use in documentation examples without needing permission. It exists so people can demonstrate links and webpage examples in technical writing.</p><p>The page is a public example, not a job posting or a company profile.</p></article></body></html>"
+    },
+    "turns": [
+      {
+        "user": "Read the data I supplied and search my local files for my resume.",
+        "expected": {
+          "tool_calls": [
+            {"name": "read_page", "succeeds": true},
+            {"name": "search_files", "succeeds": true},
+            {"name": "read_file", "arguments": {"path": "resume.md"}, "succeeds": true}
+          ],
+          "state": {"tasks": 0, "ideas": 0, "reminders": 0}
+        }
+      },
+      {
+        "user": "What is this domain for and where did I work in 2024? Cite both sources.",
+        "expected": {
+          "tool_calls": [],
+          "response_contains": ["documentation", "Acme Robotics", "example.com", "resume.md"],
+          "state": {"tasks": 0, "ideas": 0, "reminders": 0}
+        }
+      }
+    ]
+  },
+  {
+    "id": "compare_web_posting_with_resume",
+    "kind": "regression",
+    "tags": ["web_context", "local_file", "comparison", "citation"],
+    "now": "2026-09-21T09:00:00+02:00",
+    "workspace_files": {
+      "resumes/ml_resume.md": "# ML Resume\nI built Python data pipelines and APIs at Acme Robotics in 2024.\n"
+    },
+    "web_page": {
+      "url": "https://example.com/jobs/ml-engineer",
+      "html": "<html><head><title>ML Engineer at Northstar Labs</title></head><body><nav>Sign in Careers Home Contact</nav><main><article><h1>ML Engineer at Northstar Labs</h1><p>We are hiring an ML engineer to build production data and model services with our team. This role involves collaborating with product and engineering colleagues to ship reliable systems.</p><h2>Requirements</h2><p>Required skills include Python and Kubernetes. The engineer will use Kubernetes to deploy and operate model services in production. Experience with APIs and data pipelines is also valuable.</p><p>The role is based in Berlin and supports cross-functional teamwork on machine learning products.</p></article></main></body></html>"
+    },
+    "turns": [
+      {
+        "user": "Read the webpage I supplied and search my local files for my ML resume. Name one required skill in the posting that my resume does not mention. Cite both sources.",
+        "expected": {
+          "tool_calls": [
+            {"name": "read_page", "succeeds": true},
+            {"name": "search_files", "succeeds": true},
+            {"name": "read_file", "arguments": {"path": "resumes/ml_resume.md"}, "succeeds": true}
+          ],
+          "response_contains": ["Kubernetes", "ml_resume.md", "example.com/jobs/ml-engineer"],
+          "state": {"tasks": 0, "ideas": 0, "reminders": 0}
+        }
+      }
+    ]
+  },
+  {
     "id": "local_file_resume_lookup",
     "kind": "regression",
     "tags": ["local_file", "search", "read", "citation"],

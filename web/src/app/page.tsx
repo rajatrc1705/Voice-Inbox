@@ -40,8 +40,12 @@ type StoredItems = {
 
 const API_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
 
-async function createSession(): Promise<{ livekit_url: string; token: string }> {
-  const response = await fetch(`${API_URL}/session`, { method: "POST" });
+async function createSession(pageUrl: string): Promise<{ livekit_url: string; token: string }> {
+  const response = await fetch(`${API_URL}/session`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ page_url: pageUrl || null }),
+  });
   if (!response.ok) throw new Error(await response.text());
   return response.json();
 }
@@ -96,6 +100,7 @@ const stateLabel: Record<VoiceState, string> = {
 };
 
 export default function Home() {
+  const [pageUrl, setPageUrl] = useState("");
   const [voiceState, setVoiceState] = useState<VoiceState>("idle");
   const [transcript, setTranscript] = useState<TranscriptTurn[]>([]);
   const [items, setItems] = useState<StoredItems>({
@@ -178,7 +183,7 @@ export default function Home() {
     });
 
     try {
-      const session = await createSession();
+      const session = await createSession(pageUrl.trim());
       await room.connect(session.livekit_url, session.token);
       await room.startAudio();
       await room.localParticipant.setMicrophoneEnabled(true);
@@ -201,6 +206,18 @@ export default function Home() {
           Speak naturally and untangle what is on your mind.
         </p>
       </header>
+
+      <label className="mt-8 flex flex-col gap-2 text-sm font-medium text-zinc-700">
+        Public webpage URL to discuss (optional)
+        <input
+          type="url"
+          value={pageUrl}
+          onChange={(event) => setPageUrl(event.target.value)}
+          disabled={voiceState !== "idle" && voiceState !== "error"}
+          placeholder="https://example.com/job-posting"
+          className="rounded-lg border border-zinc-300 bg-white px-3 py-2 font-normal text-zinc-900 disabled:bg-zinc-100"
+        />
+      </label>
 
       <section className="flex flex-col items-center py-16">
         <button

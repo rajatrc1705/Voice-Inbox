@@ -49,6 +49,44 @@ uv run python -m evals.run --case local_file_resume_lookup --repetitions 3
 Check `case_success` in the printed report; `3/3` means all three runs met every
 check. Text evals do not test microphone capture or speech playback.
 
+## Compare a webpage with a local file
+
+Before starting a conversation, paste a public HTML URL into the **Webpage URL to
+discuss** field. The URL belongs to that conversation. The agent reads the page
+only when you ask about it, extracts its main text, and sends at most 12,000
+characters to the model. Private network URLs and non-HTML pages are rejected.
+JavaScript-only pages may not contain readable text in their initial HTML.
+
+For a quick voice test, keep `workspace/resume.md` with
+`In 2024 I worked at Acme Robotics.`, paste `https://example.com` into the URL
+field, start a new conversation, and ask: “Read the webpage I supplied and search
+my local files for my resume. What is this domain for, and where did I work in 2024? Cite both
+sources.” The answer should say the domain is for documentation examples, name
+Acme Robotics, and cite both `example.com` and `resume.md`. The last record in
+`voice_inbox_traces.jsonl` should contain successful `read_page`, `search_files`,
+and `read_file` calls.
+
+The quantitative comparison eval uses a fixed synthetic job posting and resume:
+
+```bash
+uv run python -m evals.run --case compare_web_posting_with_resume --repetitions 3
+```
+
+It passes when the agent reads both sources, identifies Kubernetes as a posting
+requirement not mentioned in the resume, cites both, and makes no inbox items.
+The eval supplies fixed page HTML, so it does not depend on a live website.
+
+If a pause splits the voice request into two turns, ask the follow-up “What is
+this domain for and where did I work in 2024? Cite both sources.” The agent
+should use the page and resume it read in the first turn, without fetching them
+again. Automatic turn detection can still treat a pause as the end of a turn.
+
+The follow-up behavior has its own two-turn text eval:
+
+```bash
+uv run python -m evals.run --case web_question_continues_after_source_request --repetitions 3
+```
+
 ## Run agent evaluations
 
 The eval runner sends scripted text turns through the same agent instructions, model,

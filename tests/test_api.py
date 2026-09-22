@@ -1,3 +1,4 @@
+import json
 import unittest
 import tempfile
 from datetime import datetime
@@ -75,14 +76,29 @@ class ApiTest(unittest.IsolatedAsyncioTestCase):
             patch.object(main, "AccessToken", return_value=token),
             patch.object(main, "LiveKitAPI", return_value=livekit),
         ):
-            response = await main.create_session()
+            response = await main.create_session(
+                main.SessionRequest(page_url="https://example.com/job")
+            )
 
         self.assertEqual(
             response,
             {"livekit_url": "wss://livekit.example", "token": "browser-token"},
         )
         livekit.agent_dispatch.create_dispatch.assert_awaited_once()
+        dispatch = livekit.agent_dispatch.create_dispatch.await_args.args[0]
+        self.assertEqual(json.loads(dispatch.metadata), {"page_url": "https://example.com/job"})
         livekit.aclose.assert_awaited_once()
+
+    async def test_session_rejects_non_web_url(self) -> None:
+        with patch.multiple(
+            main,
+            LIVEKIT_URL="wss://livekit.example",
+            LIVEKIT_API_KEY="key",
+            LIVEKIT_API_SECRET="secret",
+        ):
+            with self.assertRaises(HTTPException) as raised:
+                await main.create_session(main.SessionRequest(page_url="file:///etc/passwd"))
+        self.assertEqual(raised.exception.status_code, 400)
 
 
 if __name__ == "__main__":

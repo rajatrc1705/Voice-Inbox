@@ -1,11 +1,14 @@
+import json
 import os
 from pathlib import Path
+from urllib.parse import urlsplit
 from uuid import uuid4
 
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from livekit.api import AccessToken, CreateAgentDispatchRequest, LiveKitAPI, VideoGrants
+from pydantic import BaseModel
 
 from voice_inbox.models import Idea, Reminder, Task
 from voice_inbox.repository import VoiceInboxRepository
@@ -26,6 +29,10 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+class SessionRequest(BaseModel):
+    page_url: str | None = None
 
 
 @app.get("/health")
@@ -49,9 +56,18 @@ def list_reminders() -> list[Reminder]:
 
 
 @app.post("/session")
-async def create_session() -> dict[str, str]:
+async def create_session(request: SessionRequest | None = None) -> dict[str, str]:
     if not (LIVEKIT_URL and LIVEKIT_API_KEY and LIVEKIT_API_SECRET):
         raise HTTPException(status_code=503, detail="LiveKit is not configured")
+
+    page_url = (request.page_url or "").strip() if request else ""
+    if page_url:
+        try:
+            parsed = urlsplit(page_url)
+        except ValueError as error:
+            raise HTTPException(status_code=400, detail="Invalid webpage URL.") from error
+        if parsed.scheme not in {"http", "https"} or not parsed.hostname or len(page_url) > 2048:
+            raise HTTPException(status_code=400, detail="Provide a full public webpage URL.")
 
     session_id = uuid4().hex
     room_name = f"voice-{session_id}"
@@ -75,6 +91,7 @@ async def create_session() -> dict[str, str]:
             CreateAgentDispatchRequest(
                 agent_name="voice-inbox-agent",
                 room=room_name,
+                metadata=json.dumps({"page_url": page_url}),
             )
         )
     except Exception as exc:

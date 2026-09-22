@@ -13,6 +13,7 @@ from livekit.agents import ErrorEvent
 from voice_inbox.evaluation import grade_turn, observe_run
 from voice_inbox.repository import VoiceInboxRepository
 from voice_inbox.workspace import WorkspaceFiles
+from voice_inbox.web import extract_page_text
 
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_CASES_PATH = ROOT / "evals" / "cases.json"
@@ -98,8 +99,17 @@ async def run_case(
             path = workspace_root / relative_path
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text(content, encoding="utf-8")
+        web_page = case.get("web_page")
+        web_reader = (
+            (lambda url: extract_page_text(web_page["html"], url))
+            if web_page else agent.read_webpage
+        )
         session = agent.build_session(
-            repository, realtime_model, workspace=WorkspaceFiles(workspace_root)
+            repository,
+            realtime_model,
+            workspace=WorkspaceFiles(workspace_root),
+            page_url=web_page["url"] if web_page else None,
+            web_reader=web_reader,
         )
         runtime_errors: list[str] = []
 

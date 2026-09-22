@@ -10,4 +10,5 @@ dependencies = [
     "fastapi>=0.111.0",
     "uvicorn[standard]>=0.30.0",
     "pypdf>=6,<7",
+    "trafilatura>=2,<3",
 ]
