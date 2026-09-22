@@ -1,5 +1,48 @@
 [
   {
+    "id": "web_search_reads_two_sources",
+    "kind": "regression",
+    "tags": ["web_search", "source_selection", "citation"],
+    "now": "2026-09-21T09:00:00+02:00",
+    "web_search_results": [
+      {
+        "title": "Project Lumen mission overview",
+        "url": "https://lumen.example/mission",
+        "snippet": "Official mission overview for Project Lumen and its destination."
+      },
+      {
+        "title": "Project Lumen propulsion research",
+        "url": "https://research.example/lumen-propulsion",
+        "snippet": "Technical description of the spacecraft propulsion system."
+      },
+      {
+        "title": "Unrelated astronomy glossary",
+        "url": "https://glossary.example/astronomy",
+        "snippet": "Definitions of common astronomy terms."
+      }
+    ],
+    "web_pages": {
+      "https://lumen.example/mission": "<html><body><article><h1>Project Lumen</h1><p>Project Lumen is a scientific mission targeting Europa, a moon of Jupiter.</p></article></body></html>",
+      "https://research.example/lumen-propulsion": "<html><body><article><h1>Lumen propulsion</h1><p>The Project Lumen spacecraft is powered by a compact fusion drive.</p></article></body></html>",
+      "https://glossary.example/astronomy": "<html><body><article><p>An astronomy glossary unrelated to Project Lumen.</p></article></body></html>"
+    },
+    "turns": [
+      {
+        "user": "Search the web for Project Lumen. What does it target and what powers its spacecraft? Cite your sources.",
+        "expected": {
+          "tool_calls": [
+            {"name": "search_web", "argument_contains": {"query": ["Project Lumen"]}, "succeeds": true},
+            {"name": "read_page", "arguments": {"url": "https://lumen.example/mission"}, "succeeds": true},
+            {"name": "read_page", "arguments": {"url": "https://research.example/lumen-propulsion"}, "succeeds": true}
+          ],
+          "tool_order": ["search_web", "read_page", "read_page"],
+          "response_contains": ["Europa", "fusion", "source", "mission", "propulsion"],
+          "state": {"tasks": 0, "ideas": 0, "reminders": 0}
+        }
+      }
+    ]
+  },
+  {
     "id": "web_question_continues_after_source_request",
     "kind": "regression",
     "tags": ["web_context", "multi_turn", "continuation", "citation"],

@@ -100,9 +100,17 @@ async def run_case(
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text(content, encoding="utf-8")
         web_page = case.get("web_page")
+        web_pages = case.get("web_pages", {})
+        if web_page:
+            web_pages = {**web_pages, web_page["url"]: web_page["html"]}
         web_reader = (
-            (lambda url: extract_page_text(web_page["html"], url))
-            if web_page else agent.read_webpage
+            (lambda url: extract_page_text(web_pages[url], url))
+            if web_pages else agent.read_webpage
+        )
+        search_results = case.get("web_search_results")
+        web_searcher = (
+            (lambda query: search_results)
+            if search_results is not None else agent.search_tavily
         )
         session = agent.build_session(
             repository,
@@ -110,6 +118,7 @@ async def run_case(
             workspace=WorkspaceFiles(workspace_root),
             page_url=web_page["url"] if web_page else None,
             web_reader=web_reader,
+            web_searcher=web_searcher,
         )
         runtime_errors: list[str] = []
 

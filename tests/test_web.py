@@ -1,3 +1,4 @@
+import json
 import tempfile
 import unittest
 from pathlib import Path
@@ -36,6 +37,45 @@ class WebTextTest(unittest.TestCase):
 
 
 class WebToolTest(unittest.IsolatedAsyncioTestCase):
+    async def test_search_results_allow_two_page_reads(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            repository = VoiceInboxRepository(Path(directory) / "eval.db")
+            repository.initialize()
+            results = [
+                {
+                    "title": f"Result {index}",
+                    "url": f"https://example.com/{index}",
+                    "snippet": f"Snippet {index}",
+                }
+                for index in range(5)
+            ]
+            seen = []
+            state = agent.SessionState(
+                repository=repository,
+                web_searcher=lambda query: results,
+                web_reader=lambda url: seen.append(url) or f"Source: {url}\nEvidence",
+            )
+            context = SimpleNamespace(userdata=state)
+
+            search_result = await agent.search_web(context, "example query")
+            await agent.read_page(context, url=results[0]["url"])
+            await agent.read_page(context, url=results[1]["url"])
+            with self.assertRaises(ToolError):
+                await agent.read_page(context, url=results[2]["url"])
+
+        self.assertEqual(len(json.loads(search_result)), 5)
+        self.assertEqual(seen, [results[0]["url"], results[1]["url"]])
+
+    async def test_search_page_must_come_from_latest_results(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            repository = VoiceInboxRepository(Path(directory) / "eval.db")
+            repository.initialize()
+            state = agent.SessionState(repository=repository)
+            with self.assertRaises(ToolError):
+                await agent.read_page(
+                    SimpleNamespace(userdata=state), url="https://untrusted.example"
+                )
+
     async def test_page_tool_reads_only_supplied_url(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             repository = VoiceInboxRepository(Path(directory) / "eval.db")

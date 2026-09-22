@@ -87,6 +87,27 @@ The follow-up behavior has its own two-turn text eval:
 uv run python -m evals.run --case web_question_continues_after_source_request --repetitions 3
 ```
 
+## Search the web
+
+Add a Tavily API key to `.env.local`:
+
+```env
+TAVILY_API_KEY=your-key
+```
+
+Ask the agent to search the web for a question that needs current information.
+It receives up to five Tavily results, reads the two most relevant pages, and
+cites the pages it uses. Only URLs from the latest search can be read, with a
+maximum of two page reads per search.
+
+The quantitative eval uses fixed search results and page HTML, so Tavily is not
+called during the eval. It checks that the agent searches, reads exactly two
+relevant pages, answers from both, and cites both URLs:
+
+```bash
+uv run python -m evals.run --case web_search_reads_two_sources
+```
+
 ## Run agent evaluations
 
 The eval runner sends scripted text turns through the same agent instructions, model,
