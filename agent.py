@@ -26,6 +26,7 @@ from openai.types.realtime.realtime_audio_input_turn_detection import SemanticVa
 
 from voice_inbox.repository import VoiceInboxRepository
 from voice_inbox.tracing import ToolCallTrace, TraceWriter, TurnTrace
+from voice_inbox.workspace import WorkspaceFiles
 
 load_dotenv(".env.local")
 
@@ -36,6 +37,7 @@ trace_writer = TraceWriter(Path(__file__).with_name("voice_inbox_traces.jsonl"))
 @dataclass
 class SessionState:
     repository: VoiceInboxRepository
+    workspace: WorkspaceFiles | None = None
     session_id: str = field(default_factory=lambda: str(uuid4()))
     recent_item_ids: dict[str, str] = field(default_factory=dict)
     source_transcript: str = ""
@@ -103,6 +105,9 @@ def build_instructions(now: datetime | None = None) -> str:
         "update_recent tool instead of creating another item. Preserve details the "
         "user did not change. If the item being corrected is unclear, ask which one. "
         "Only claim an item was captured after its tool succeeds. "
+        "For questions about local files, use list_files or search_files to locate a file, "
+        "then read_file before answering. Answer only from the returned file content "
+        "and cite the relative path and line or page. If no evidence is found, say so. "
         "Reminder delivery is not active yet. After create_reminder succeeds, say "
         "'Recorded your reminder. Notifications are not active yet.' You may include "
         "the title and time. Never say the reminder is set or scheduled, or promise "
@@ -122,6 +127,9 @@ def build_agent(now: datetime | None = None) -> Agent:
             update_recent_task,
             update_recent_idea,
             update_recent_reminder,
+            list_files,
+            search_files,
+            read_file,
         ],
     )
 
@@ -141,9 +149,15 @@ def build_realtime_model() -> openai.realtime.RealtimeModel:
 def build_session(
     session_repository: VoiceInboxRepository,
     realtime_model: openai.realtime.RealtimeModel | None = None,
+    workspace: WorkspaceFiles | None = None,
 ) -> AgentSession[SessionState]:
     return AgentSession[SessionState](
-        userdata=SessionState(repository=session_repository),
+        userdata=SessionState(
+            repository=session_repository,
+            workspace=workspace or WorkspaceFiles(
+                Path(os.getenv("AGENT_WORKSPACE_DIR", "workspace"))
+            ),
+        ),
         llm=realtime_model or build_realtime_model(),
     )
 
@@ -155,6 +169,35 @@ async def source_transcript(context: RunContext[SessionState]) -> str:
     except TimeoutError as error:
         raise ToolError("The final user transcript is not available yet.") from error
     return context.userdata.source_transcript
+
+
+@function_tool
+async def list_files(context: RunContext[SessionState]) -> str:
+    """List the available text, Markdown, and PDF files in the local workspace."""
+    return json.dumps(context.userdata.workspace.list_files())
+
+
+@function_tool
+async def search_files(context: RunContext[SessionState], query: str) -> str:
+    """Find local workspace files by words in their names or contents.
+
+    Args:
+        query: Keywords describing the file or information needed.
+    """
+    return json.dumps(context.userdata.workspace.search_files(query))
+
+
+@function_tool
+async def read_file(context: RunContext[SessionState], path: str) -> str:
+    """Read a local workspace file and return its text with line or page references.
+
+    Args:
+        path: Relative path returned by list_files or search_files.
+    """
+    try:
+        return context.userdata.workspace.read_file(path)
+    except (ValueError, OSError) as error:
+        raise ToolError(str(error)) from error
 
 
 @function_tool

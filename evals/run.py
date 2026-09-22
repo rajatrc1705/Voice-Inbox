@@ -12,6 +12,7 @@ import agent
 from livekit.agents import ErrorEvent
 from voice_inbox.evaluation import grade_turn, observe_run
 from voice_inbox.repository import VoiceInboxRepository
+from voice_inbox.workspace import WorkspaceFiles
 
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_CASES_PATH = ROOT / "evals" / "cases.json"
@@ -38,7 +39,7 @@ def current_git_commit() -> str:
 
 
 def metric_name(check_name: str) -> str:
-    if check_name == "tool_selection":
+    if check_name in {"tool_selection", "tool_order"}:
         return "tool_selection"
     if check_name.startswith("tool_") and check_name.endswith("_success"):
         return "tool_execution"
@@ -91,7 +92,15 @@ async def run_case(
     with tempfile.TemporaryDirectory() as temporary_directory:
         repository = VoiceInboxRepository(Path(temporary_directory) / "eval.db")
         repository.initialize()
-        session = agent.build_session(repository, realtime_model)
+        workspace_root = Path(temporary_directory) / "workspace"
+        workspace_root.mkdir()
+        for relative_path, content in case.get("workspace_files", {}).items():
+            path = workspace_root / relative_path
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(content, encoding="utf-8")
+        session = agent.build_session(
+            repository, realtime_model, workspace=WorkspaceFiles(workspace_root)
+        )
         runtime_errors: list[str] = []
 
         @session.on("error")

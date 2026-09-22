@@ -1,5 +1,29 @@
 [
   {
+    "id": "local_file_resume_lookup",
+    "kind": "regression",
+    "tags": ["local_file", "search", "read", "citation"],
+    "now": "2026-09-21T09:00:00+02:00",
+    "workspace_files": {
+      "resumes/machine_learning_resume.md": "# Machine Learning Resume\nIn 2024, I worked as an ML engineer at Acme Robotics.\n",
+      "resumes/design_resume.md": "# Design Resume\nIn 2024, I worked at Cedar Studio.\n"
+    },
+    "turns": [
+      {
+        "user": "Search my local files for the machine learning resume. Which company did I work at in 2024? Cite the file.",
+        "expected": {
+          "tool_calls": [
+            {"name": "search_files", "succeeds": true},
+            {"name": "read_file", "arguments": {"path": "resumes/machine_learning_resume.md"}, "succeeds": true}
+          ],
+          "tool_order": ["search_files", "read_file"],
+          "response_contains": ["Acme Robotics", "machine_learning_resume.md", "line 2"],
+          "state": {"tasks": 0, "ideas": 0, "reminders": 0}
+        }
+      }
+    ]
+  },
+  {
     "id": "clear_task",
     "kind": "regression",
     "tags": [

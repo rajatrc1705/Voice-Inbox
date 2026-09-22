@@ -26,6 +26,29 @@ cd web && npm install && npm run dev
 
 Open [http://localhost:3000](http://localhost:3000) and press **Start conversation**.
 
+## Ask about local files
+
+Put `.txt`, `.md`, or text-based `.pdf` files in `workspace/`, or set
+`AGENT_WORKSPACE_DIR` in `.env.local` to another directory. The agent can list,
+search, and read files in that directory only. Files in `workspace/` are ignored by Git.
+Scanned PDFs need text extraction before the agent can use them.
+
+For a basic voice check, add `workspace/resume.md` containing
+`In 2024 I worked at Acme Robotics.` and ask: “Search my local files for my
+resume. Where did I work in 2024? Cite the file.” The reply should name Acme
+Robotics and `resume.md`. The last entry in `voice_inbox_traces.jsonl` should show
+`search_files` followed by `read_file`, both successful.
+
+The quantitative text eval uses its own synthetic files and checks tool order,
+successful reads, the answer, and the file citation:
+
+```bash
+uv run python -m evals.run --case local_file_resume_lookup --repetitions 3
+```
+
+Check `case_success` in the printed report; `3/3` means all three runs met every
+check. Text evals do not test microphone capture or speech playback.
+
 ## Run agent evaluations
 
 The eval runner sends scripted text turns through the same agent instructions, model,

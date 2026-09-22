@@ -91,6 +91,15 @@ def grade_turn(
             actual=actual_names,
         )
     )
+    if expected.get("tool_order"):
+        checks.append(
+            EvaluationCheck(
+                name="tool_order",
+                passed=[call.name for call in observation.tool_calls] == expected["tool_order"],
+                expected=expected["tool_order"],
+                actual=[call.name for call in observation.tool_calls],
+            )
+        )
 
     unmatched_calls = list(observation.tool_calls)
     for index, expected_call in enumerate(expected_calls):
