@@ -1,4 +1,9 @@
-# Voice Inbox
+# Voice Operator
+
+A voice-controlled AI agent system being developed to operate the browser and
+Mac, with guardrails, execution traces, evaluations, and reliability testing.
+Browser and Mac control are planned capabilities. The current Voice Inbox tools
+provide a simple environment for developing and testing the agent harness.
 
 Open the page, press the button, speak naturally, and see the live transcript.
 

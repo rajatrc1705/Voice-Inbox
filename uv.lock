@@ -2027,7 +2027,7 @@ wheels = [
 ]
 
 [[package]]
-name = "support-agent"
+name = "voice-operator"
 version = "0.1.0"
 source = { virtual = "." }
 dependencies = [

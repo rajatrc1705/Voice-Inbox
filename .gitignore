@@ -2,6 +2,9 @@
 .idea/
 .vscode/
 
+# Local project direction and working context
+/PROJECT_DIRECTION.md
+
 .env
 .env.*
 !.env.example
