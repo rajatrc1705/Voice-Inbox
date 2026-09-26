@@ -5,6 +5,10 @@ Mac, with guardrails, execution traces, evaluations, and reliability testing.
 Browser and Mac control are planned capabilities. The current Voice Inbox tools
 provide a simple environment for developing and testing the agent harness.
 
+Mutation tools now execute through deterministic checks and return structured
+outcomes. See [tool execution with guardrails](docs/tool-execution.md) for the
+contract, local tests, action records, and manual verification steps.
+
 Open the page, press the button, speak naturally, and see the live transcript.
 
 Tasks, ideas, and reminder requests are saved locally. Reminders record the requested

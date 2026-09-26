@@ -38,6 +38,9 @@ class TraceWriter:
         self.path = path
 
     def write(self, trace: TurnTrace) -> None:
+        self.write_event(trace.to_dict())
+
+    def write_event(self, event: dict[str, object]) -> None:
+        line = json.dumps(event) + "\n"
         with self.path.open("a", encoding="utf-8") as trace_file:
-            json.dump(trace.to_dict(), trace_file)
-            trace_file.write("\n")
+            trace_file.write(line)

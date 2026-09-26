@@ -141,7 +141,7 @@
         "expected": {
           "tool_calls": [
             {
-              "name": "create_task",
+              "name": "create_task", "outcome": {"status": "executed", "reason": "ok", "effect": "committed"},
               "argument_contains": {
                 "title": [
                   "send",
@@ -174,7 +174,7 @@
         "expected": {
           "tool_calls": [
             {
-              "name": "create_idea",
+              "name": "create_idea", "outcome": {"status": "executed", "reason": "ok", "effect": "committed"},
               "argument_contains": {
                 "text": [
                   "prefix",
@@ -209,7 +209,7 @@
         "expected": {
           "tool_calls": [
             {
-              "name": "create_reminder",
+              "name": "create_reminder", "outcome": {"status": "executed", "reason": "ok", "effect": "committed"},
               "arguments": {
                 "trigger_at": "2026-09-22T11:00:00+02:00"
               },
@@ -284,21 +284,21 @@
         "expected": {
           "tool_calls": [
             {
-              "name": "create_task",
+              "name": "create_task", "outcome": {"status": "executed", "reason": "ok", "effect": "committed"},
               "argument_contains": {
                 "title": ["send", "invoice"]
               },
               "succeeds": true
             },
             {
-              "name": "create_idea",
+              "name": "create_idea", "outcome": {"status": "executed", "reason": "ok", "effect": "committed"},
               "argument_contains": {
                 "text": ["prefix", "caching"]
               },
               "succeeds": true
             },
             {
-              "name": "create_reminder",
+              "name": "create_reminder", "outcome": {"status": "executed", "reason": "ok", "effect": "committed"},
               "arguments": {
                 "trigger_at": "2026-09-22T11:00:00+02:00"
               },
@@ -328,14 +328,14 @@
       {
         "user": "I need to send the invoice.",
         "expected": {
-          "tool_calls": [{"name": "create_task", "argument_contains": {"title": ["send", "invoice"]}, "succeeds": true}],
+          "tool_calls": [{"name": "create_task", "outcome": {"status": "executed", "reason": "ok", "effect": "committed"}, "argument_contains": {"title": ["send", "invoice"]}, "succeeds": true}],
           "state": {"tasks": 1, "ideas": 0, "reminders": 0}
         }
       },
       {
         "user": "Actually make that the Jetson invoice.",
         "expected": {
-          "tool_calls": [{"name": "update_recent_task", "argument_contains": {"title": ["send", "jetson", "invoice"]}, "succeeds": true}],
+          "tool_calls": [{"name": "update_recent_task", "outcome": {"status": "executed", "reason": "ok", "effect": "committed"}, "argument_contains": {"title": ["send", "jetson", "invoice"]}, "succeeds": true}],
           "state": {"tasks": 1, "ideas": 0, "reminders": 0}
         }
       }
@@ -350,14 +350,14 @@
       {
         "user": "I want to explore prefix caching.",
         "expected": {
-          "tool_calls": [{"name": "create_idea", "argument_contains": {"text": ["prefix", "caching"]}, "succeeds": true}],
+          "tool_calls": [{"name": "create_idea", "outcome": {"status": "executed", "reason": "ok", "effect": "committed"}, "argument_contains": {"text": ["prefix", "caching"]}, "succeeds": true}],
           "state": {"tasks": 0, "ideas": 1, "reminders": 0}
         }
       },
       {
         "user": "Actually, make the idea about KV cache eviction instead.",
         "expected": {
-          "tool_calls": [{"name": "update_recent_idea", "argument_contains": {"text": ["kv", "cache", "eviction"]}, "succeeds": true}],
+          "tool_calls": [{"name": "update_recent_idea", "outcome": {"status": "executed", "reason": "ok", "effect": "committed"}, "argument_contains": {"text": ["kv", "cache", "eviction"]}, "succeeds": true}],
           "state": {"tasks": 0, "ideas": 1, "reminders": 0}
         }
       }
@@ -372,14 +372,14 @@
       {
         "user": "Remind me tomorrow at eleven to call Alex.",
         "expected": {
-          "tool_calls": [{"name": "create_reminder", "arguments": {"trigger_at": "2026-09-22T11:00:00+02:00"}, "succeeds": true}],
+          "tool_calls": [{"name": "create_reminder", "outcome": {"status": "executed", "reason": "ok", "effect": "committed"}, "arguments": {"trigger_at": "2026-09-22T11:00:00+02:00"}, "succeeds": true}],
           "state": {"tasks": 0, "ideas": 0, "reminders": 1}
         }
       },
       {
         "user": "Actually make that four in the afternoon.",
         "expected": {
-          "tool_calls": [{"name": "update_recent_reminder", "arguments": {"trigger_at": "2026-09-22T16:00:00+02:00"}, "succeeds": true}],
+          "tool_calls": [{"name": "update_recent_reminder", "outcome": {"status": "executed", "reason": "ok", "effect": "committed"}, "arguments": {"trigger_at": "2026-09-22T16:00:00+02:00"}, "succeeds": true}],
           "response_not_contains": ["i'll remind", "i will remind", "i'll notify", "i will notify"],
           "state": {"tasks": 0, "ideas": 0, "reminders": 1, "reminder_trigger_at": "2026-09-22T16:00:00+02:00"}
         }
@@ -421,7 +421,7 @@
         "expected": {
           "tool_calls": [
             {
-              "name": "create_reminder",
+              "name": "create_reminder", "outcome": {"status": "executed", "reason": "ok", "effect": "committed"},
               "arguments": {
                 "trigger_at": "2026-09-29T11:00:00+02:00"
               },

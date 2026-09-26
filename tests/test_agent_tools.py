@@ -1,3 +1,4 @@
+import json
 import tempfile
 import unittest
 from datetime import datetime
@@ -5,7 +6,6 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import agent
-from livekit.agents import ToolError
 from voice_inbox.repository import VoiceInboxRepository
 
 
@@ -107,8 +107,10 @@ class AgentToolsTest(unittest.IsolatedAsyncioTestCase):
             )
             repository.initialize()
             context = SimpleNamespace(userdata=agent.SessionState(repository=repository))
-            with self.assertRaises(ToolError):
-                await agent.update_recent_task(context, title="Send invoice")
+            outcome = json.loads(await agent.update_recent_task(context, title="Send invoice"))
+            self.assertEqual(outcome["status"], "blocked")
+            self.assertEqual(outcome["reason"], "target_not_found")
+            self.assertEqual(repository.list_tasks(), [])
 
 
 if __name__ == "__main__":

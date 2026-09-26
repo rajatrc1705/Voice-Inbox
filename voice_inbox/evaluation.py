@@ -3,6 +3,7 @@ from dataclasses import asdict, dataclass
 
 from livekit.agents.voice.run_result import RunEvent
 
+from .execution import ACTIONS
 from .repository import VoiceInboxRepository
 
 
@@ -13,6 +14,7 @@ class ToolCallObservation:
     arguments: dict[str, object]
     result: str | None = None
     succeeded: bool | None = None
+    action_outcome: dict[str, object] | None = None
 
 
 @dataclass
@@ -55,6 +57,27 @@ def observe_run(events: list[RunEvent], duration: float) -> TurnObservation:
             if call is not None:
                 call.result = event.item.output
                 call.succeeded = not event.item.is_error
+                try:
+                    result = json.loads(call.result)
+                except (ValueError, TypeError):
+                    result = None
+                if call.name in ACTIONS:
+                    # A normal transport return is not proof of mutation success.
+                    # Missing/malformed outcomes must fail closed for these tools.
+                    call.succeeded = False
+                    if (isinstance(result, dict)
+                            and result.get("action") == call.name
+                            and isinstance(result.get("action_id"), str)
+                            and bool(result["action_id"])
+                            and isinstance(result.get("reason"), str)
+                            and bool(result["reason"])
+                            and result.get("status") in ("executed", "blocked", "failed")
+                            and result.get("effect") in ("none", "committed", "unknown")):
+                        call.action_outcome = result
+                        call.succeeded = (not event.item.is_error
+                                          and result["status"] == "executed"
+                                          and result["effect"] == "committed")
+
         elif event.type == "message" and event.item.role == "assistant":
             assistant_response = event.item.text_content or ""
 
@@ -137,6 +160,16 @@ def grade_turn(
                     actual=actual_call.arguments.get(argument_name),
                 )
             )
+
+        for field in ("status", "reason", "next_step", "effect"):
+            if field in expected_call.get("outcome", {}):
+                expected_value = expected_call["outcome"][field]
+                actual_value = (actual_call.action_outcome or {}).get(field)
+                checks.append(EvaluationCheck(
+                    name=f"action_{index}_{field}",
+                    passed=actual_value == expected_value,
+                    expected=expected_value, actual=actual_value,
+                ))
 
         if "succeeds" in expected_call:
             checks.append(

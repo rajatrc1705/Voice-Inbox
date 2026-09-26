@@ -25,6 +25,7 @@ from livekit.agents import (
 from livekit.plugins import noise_cancellation, openai
 from openai.types.realtime.realtime_audio_input_turn_detection import SemanticVad
 
+from voice_inbox.execution import ACTIONS, ActionContext, execute_action
 from voice_inbox.repository import VoiceInboxRepository
 from voice_inbox.search import search_tavily
 from voice_inbox.tracing import ToolCallTrace, TraceWriter, TurnTrace
@@ -35,6 +36,7 @@ load_dotenv(".env.local")
 
 repository = VoiceInboxRepository(Path(__file__).with_name("voice_inbox.db"))
 trace_writer = TraceWriter(Path(__file__).with_name("voice_inbox_traces.jsonl"))
+action_writer = TraceWriter(Path(__file__).with_name("voice_operator_actions.jsonl"))
 
 
 @dataclass
@@ -51,12 +53,15 @@ class SessionState:
     source_transcript: str = ""
     transcript_ready: asyncio.Event = field(default_factory=asyncio.Event)
     active_turn: TurnTrace | None = None
+    action_turn_id: str | None = None
+    action_recorder: Callable[[dict[str, object]], None] | None = None
 
 
 def start_turn(state: SessionState, transcript: str, started_at: float) -> None:
+    state.action_turn_id = str(uuid4())
     state.active_turn = TurnTrace(
         session_id=state.session_id,
-        turn_id=str(uuid4()),
+        turn_id=state.action_turn_id,
         user_transcript=transcript,
         started_at=started_at,
     )
@@ -112,7 +117,13 @@ def build_instructions(now: datetime | None = None) -> str:
         "When the user corrects a recently captured item, use the matching "
         "update_recent tool instead of creating another item. Preserve details the "
         "user did not change. If the item being corrected is unclear, ask which one. "
-        "Only claim an item was captured after its tool succeeds. "
+        "Mutation tools return JSON outcomes: executed, blocked, or failed. "
+        "Only claim a change occurred when status is executed. For blocked outcomes, "
+        "follow next_step: clarify means ask for missing information or a target; "
+        "correct_proposal means fix the tool arguments using known information; "
+        "none means do not retry the unchanged request. no_changes means nothing "
+        "was changed. A failed action with effect unknown may have happened: do not "
+        "automatically retry or claim success. "
         "For questions about local files, use list_files or search_files to locate a file, "
         "then read_file before answering. Answer only from the returned file content "
         "and cite the relative path and line or page. If no evidence is found, say so. "
@@ -177,6 +188,7 @@ def build_session(
     page_url: str | None = None,
     web_reader: Callable[[str], str] = read_webpage,
     web_searcher: Callable[[str], list[dict[str, str]]] = search_tavily,
+    action_recorder: Callable[[dict[str, object]], None] | None = None,
 ) -> AgentSession[SessionState]:
     return AgentSession[SessionState](
         userdata=SessionState(
@@ -187,6 +199,7 @@ def build_session(
             page_url=page_url,
             web_reader=web_reader,
             web_searcher=web_searcher,
+            action_recorder=action_recorder,
         ),
         llm=realtime_model or build_realtime_model(),
     )
@@ -270,6 +283,40 @@ async def read_page(context: RunContext[SessionState], url: str | None = None) -
         raise ToolError(str(error)) from error
 
 
+async def run_mutation(
+    context: RunContext[SessionState], action: str, arguments: dict[str, object]
+) -> str:
+    """Adapt LiveKit context to the model-independent executor."""
+    state = context.userdata
+    # Capture runtime-owned context; keep action identity after early turn closure.
+    # Overlapping/interrupted turns still need the broader lifecycle work.
+    turn_id = state.action_turn_id
+    targets = dict(state.recent_item_ids)
+    transcript = state.source_transcript
+    if ACTIONS[action].creates:
+        try:
+            transcript = await source_transcript(context)
+            turn_id = state.action_turn_id
+        except ToolError:
+            transcript = None
+    function_call = getattr(context, "function_call", None)
+    outcome = execute_action(
+        action, arguments,
+        ActionContext(
+            session_id=state.session_id,
+            recent_item_ids=targets,
+            source_transcript=transcript,
+            turn_id=turn_id,
+            tool_call_id=getattr(function_call, "call_id", None),
+        ),
+        state.repository,
+        record=state.action_recorder,
+    )
+    if outcome.status == "executed" and ACTIONS[action].creates:
+        state.recent_item_ids[ACTIONS[action].item_type] = outcome.result["id"]
+    return json.dumps(outcome.to_dict())
+
+
 @function_tool
 async def create_task(context: RunContext[SessionState], title: str) -> str:
     """Save a concrete action the user clearly intends to perform.
@@ -277,13 +324,7 @@ async def create_task(context: RunContext[SessionState], title: str) -> str:
     Args:
         title: A short action-oriented title for the task.
     """
-
-    task = context.userdata.repository.create_task(
-        title=title,
-        source_transcript=await source_transcript(context),
-    )
-    context.userdata.recent_item_ids["task"] = task.id
-    return f"Created task {task.id}: {task.title}"
+    return await run_mutation(context, "create_task", {"title": title})
 
 
 @function_tool
@@ -293,44 +334,21 @@ async def create_idea(context: RunContext[SessionState], text: str) -> str:
     Args:
         text: A concise description of the idea.
     """
-
-    idea = context.userdata.repository.create_idea(
-        text=text,
-        source_transcript=await source_transcript(context),
-    )
-    context.userdata.recent_item_ids["idea"] = idea.id
-    return f"Created idea {idea.id}: {idea.text}"
+    return await run_mutation(context, "create_idea", {"text": text})
 
 
 @function_tool
 async def create_reminder(
     context: RunContext[SessionState], title: str, trigger_at: str
 ) -> str:
-    """Store a reminder request and its requested time; no notification is scheduled.
-
-    Delivery is inactive. Confirm only that the reminder was recorded and explain
-    that notifications are not active yet.
+    """Record a reminder request; notifications are not active.
 
     Args:
         title: A short description of what the user wants to be reminded about.
         trigger_at: The reminder time as an ISO 8601 timestamp with UTC offset.
     """
-
-    try:
-        trigger_time = datetime.fromisoformat(trigger_at)
-    except ValueError as error:
-        raise ToolError("trigger_at must be an ISO 8601 timestamp.") from error
-
-    reminder = context.userdata.repository.create_reminder(
-        title=title,
-        trigger_at=trigger_time,
-        source_transcript=await source_transcript(context),
-    )
-    context.userdata.recent_item_ids["reminder"] = reminder.id
-    return (
-        f"Recorded reminder {reminder.id}: {reminder.title} at {trigger_at}. "
-        "Notifications are not active yet; no notification has been scheduled."
-    )
+    return await run_mutation(context, "create_reminder",
+                              {"title": title, "trigger_at": trigger_at})
 
 
 @function_tool
@@ -340,15 +358,7 @@ async def update_recent_task(context: RunContext[SessionState], title: str) -> s
     Args:
         title: The corrected action-oriented task title.
     """
-
-    task_id = context.userdata.recent_item_ids.get("task")
-    if task_id is None:
-        raise ToolError("No recent task to update. Ask the user which task they mean.")
-    try:
-        task = context.userdata.repository.update_task_title(task_id, title)
-    except ValueError as error:
-        raise ToolError(str(error)) from error
-    return f"Updated task {task.id}: {task.title}"
+    return await run_mutation(context, "update_recent_task", {"title": title})
 
 
 @function_tool
@@ -358,15 +368,7 @@ async def update_recent_idea(context: RunContext[SessionState], text: str) -> st
     Args:
         text: The corrected idea or note text.
     """
-
-    idea_id = context.userdata.recent_item_ids.get("idea")
-    if idea_id is None:
-        raise ToolError("No recent idea to update. Ask the user which idea they mean.")
-    try:
-        idea = context.userdata.repository.update_idea_text(idea_id, text)
-    except ValueError as error:
-        raise ToolError(str(error)) from error
-    return f"Updated idea {idea.id}: {idea.text}"
+    return await run_mutation(context, "update_recent_idea", {"text": text})
 
 
 @function_tool
@@ -381,28 +383,8 @@ async def update_recent_reminder(
         title: A corrected reminder title, only if the user changed it.
         trigger_at: A corrected ISO 8601 timestamp with UTC offset, only if changed.
     """
-
-    reminder_id = context.userdata.recent_item_ids.get("reminder")
-    if reminder_id is None:
-        raise ToolError("No recent reminder to update. Ask which reminder they mean.")
-    if title is None and trigger_at is None:
-        raise ToolError("Provide a changed reminder title or time.")
-    trigger_time = None
-    if trigger_at is not None:
-        try:
-            trigger_time = datetime.fromisoformat(trigger_at)
-        except ValueError as error:
-            raise ToolError("trigger_at must be an ISO 8601 timestamp.") from error
-    try:
-        reminder = context.userdata.repository.update_reminder(
-            reminder_id, title=title, trigger_at=trigger_time
-        )
-    except ValueError as error:
-        raise ToolError(str(error)) from error
-    return (
-        f"Updated recorded reminder {reminder.id}: {reminder.title} at "
-        f"{reminder.trigger_at.isoformat()}. Notifications are not active yet."
-    )
+    return await run_mutation(context, "update_recent_reminder",
+                              {"title": title, "trigger_at": trigger_at})
 
 
 def initialize_process(_: object) -> None:
@@ -417,7 +399,8 @@ async def voice_inbox_agent(ctx: agents.JobContext) -> None:
     await ctx.connect()
     # event-driven coordinator, does not itself understand the language
     metadata = json.loads(ctx.job.metadata or "{}")
-    session = build_session(repository, page_url=metadata.get("page_url"))
+    session = build_session(repository, page_url=metadata.get("page_url"),
+                            action_recorder=action_writer.write_event)
 
     @session.on("user_input_transcribed")
     def record_user_transcript(event: UserInputTranscribedEvent) -> None:

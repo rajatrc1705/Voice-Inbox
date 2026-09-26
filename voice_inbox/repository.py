@@ -17,6 +17,14 @@ def _serialize_datetime(value: datetime | None) -> str | None:
     return value.isoformat() if value is not None else None
 
 
+class MutationBlocked(ValueError):
+    """A deterministic precondition prevented a write."""
+
+    def __init__(self, reason: str) -> None:
+        self.reason = reason
+        super().__init__(reason)
+
+
 class VoiceInboxRepository:
     """Owns database access; callers work with domain objects, not SQL rows."""
 
@@ -161,6 +169,7 @@ class VoiceInboxRepository:
 
     def update_task_title(self, task_id: str, title: str) -> Task:
         with closing(self._connect()) as connection:
+            self._check_update(connection, "tasks", task_id, {"title": title}, TaskStatus.OPEN)
             cursor = connection.execute(
                 "UPDATE tasks SET title = ?, updated_at = ? WHERE id = ? AND status = ?",
                 (title, _serialize_datetime(utc_now()), task_id, TaskStatus.OPEN),
@@ -175,6 +184,7 @@ class VoiceInboxRepository:
 
     def update_idea_text(self, idea_id: str, text: str) -> Idea:
         with closing(self._connect()) as connection:
+            self._check_update(connection, "ideas", idea_id, {"text": text})
             cursor = connection.execute(
                 "UPDATE ideas SET text = ? WHERE id = ?", (text, idea_id)
             )
@@ -192,8 +202,11 @@ class VoiceInboxRepository:
         trigger_at: datetime | None = None,
     ) -> Reminder:
         if title is None and trigger_at is None:
-            raise ValueError("Provide a new reminder title or time.")
+            raise MutationBlocked("no_changes")
         with closing(self._connect()) as connection:
+            self._check_update(connection, "reminders", reminder_id,
+                               {"title": title, "trigger_at": trigger_at},
+                               ReminderStatus.SCHEDULED)
             cursor = connection.execute(
                 """UPDATE reminders
                 SET title = COALESCE(?, title), trigger_at = COALESCE(?, trigger_at),
@@ -214,6 +227,34 @@ class VoiceInboxRepository:
             ).fetchone()
             connection.commit()
         return self._reminder_from_row(row)
+
+    @staticmethod
+    def _check_update(
+        connection: sqlite3.Connection,
+        table: str,
+        item_id: str,
+        changes: dict[str, object],
+        eligible_status: str | None = None,
+    ) -> None:
+        # Table names are internal constants, never model arguments. Acquire the
+        # write lock before reading so checks and mutation use the same snapshot.
+        connection.execute("BEGIN IMMEDIATE")
+        row = connection.execute(
+            f"SELECT * FROM {table} WHERE id = ?", (item_id,)
+        ).fetchone()
+        if row is None:
+            raise MutationBlocked("target_not_found")
+        if eligible_status is not None and row["status"] != eligible_status:
+            raise MutationBlocked("target_inactive")
+        for name, proposed in changes.items():
+            if proposed is None:
+                continue
+            current = row[name]
+            if isinstance(proposed, datetime):
+                current = datetime.fromisoformat(current)
+            if proposed != current:
+                return
+        raise MutationBlocked("no_changes")
 
     def list_tasks(self) -> list[Task]:
         with closing(self._connect()) as connection:

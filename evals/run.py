@@ -7,6 +7,7 @@ import tempfile
 from datetime import UTC, datetime
 from pathlib import Path
 from time import monotonic
+from uuid import uuid4
 
 import agent
 from livekit.agents import ErrorEvent
@@ -44,6 +45,8 @@ def metric_name(check_name: str) -> str:
         return "tool_selection"
     if check_name.startswith("tool_") and check_name.endswith("_success"):
         return "tool_execution"
+    if check_name.startswith("action_"):
+        return "action_outcome"
     if check_name.startswith("tool_"):
         return "tool_arguments"
     if check_name == "clarification":
@@ -112,6 +115,7 @@ async def run_case(
             (lambda query: search_results)
             if search_results is not None else agent.search_tavily
         )
+        action_events = []
         session = agent.build_session(
             repository,
             realtime_model,
@@ -119,6 +123,7 @@ async def run_case(
             page_url=web_page["url"] if web_page else None,
             web_reader=web_reader,
             web_searcher=web_searcher,
+            action_recorder=action_events.append,
         )
         runtime_errors: list[str] = []
 
@@ -126,10 +131,12 @@ async def run_case(
         def record_runtime_error(event: ErrorEvent) -> None:
             runtime_errors.append(str(event.error))
 
-        await session.start(agent=agent.build_agent(now), record=False)
-
+        execution_error = None
         try:
+            await session.start(agent=agent.build_agent(now), record=False)
             for turn_number, turn in enumerate(case["turns"], start=1):
+                action_events.clear()
+                session.userdata.action_turn_id = uuid4().hex
                 user_input = turn["user"]
                 session.userdata.source_transcript = user_input
                 session.userdata.transcript_ready.set()
@@ -150,19 +157,34 @@ async def run_case(
                         "user": user_input,
                         "passed": all(check.passed for check in checks),
                         "observation": observation.to_dict(),
+                        "action_events": list(action_events),
                         "checks": [check.to_dict() for check in checks],
                     }
                 )
+                action_events.clear()
+        except Exception as error:
+            execution_error = str(error)
         finally:
-            await session.aclose()
+            try:
+                await session.aclose()
+            except Exception as error:
+                cleanup_error = f"Session cleanup failed: {error}"
+                execution_error = (f"{execution_error}; {cleanup_error}"
+                                   if execution_error is not None else cleanup_error)
 
-    return {
+    result = {
         "id": case["id"],
         "kind": case.get("kind", "regression"),
         "tags": case.get("tags", []),
-        "passed": all(turn["passed"] for turn in turn_results),
+        "passed": execution_error is None and all(turn["passed"] for turn in turn_results),
         "turns": turn_results,
     }
+    if execution_error is not None:
+        result["execution_error"] = execution_error
+        # Preserve evidence from a turn that never reached grading. Its records
+        # must not be mistaken for a completed/evaluated turn.
+        result["incomplete_action_events"] = list(action_events)
+    return result
 
 
 async def run_evaluations(
